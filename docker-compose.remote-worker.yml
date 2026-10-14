@@ -1,0 +1,30 @@
+# Run only the trusted worker on your PC. The public site and database stay on Render.
+# .env.worker must contain the Render PostgreSQL External Database URL.
+services:
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    env_file:
+      - .env.worker
+    environment:
+      DOCKER_HOST: unix:///var/run/docker.sock
+    depends_on:
+      sandbox-runtime:
+        condition: service_started
+    volumes:
+      - worker_artifacts:/app/data/artifacts
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  sandbox-runtime:
+    image: oantuti-sandbox:dev
+    build:
+      context: .
+      dockerfile: sandbox/Dockerfile
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["sleep infinity"]
+    restart: unless-stopped
+
+volumes:
+  worker_artifacts:

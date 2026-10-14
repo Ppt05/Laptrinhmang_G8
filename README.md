@@ -20,6 +20,34 @@ Render Free hiện chạy website/API và cơ sở dữ liệu, **chưa chạy w
 
 Muốn demo hai bot chạy đầy đủ ngay, hãy chạy toàn bộ stack bằng Docker trên máy có Docker Desktop như hướng dẫn bên dưới. Muốn các trận trên website Render chạy online, cần triển khai một worker có Docker và kết nối cùng cơ sở dữ liệu; Render Free không có gói Background Worker miễn phí.
 
+## Chạy worker trên máy cá nhân, dùng website Render
+
+Máy chạy worker có thể khác máy người chơi. Máy worker phải bật, có Internet và Docker Desktop đang chạy trong suốt thời gian thi. Worker cần quyền truy cập Docker socket để chạy bot trong sandbox; chỉ chạy trên máy của ban tổ chức.
+
+1. Lấy **External Database URL** trong Render Dashboard → dịch vụ Postgres của cuộc thi → **Connect**. Không dùng Internal Database URL vì worker chạy ngoài Render.
+2. Trong thư mục `oantuti_server`, tạo file cấu hình riêng:
+
+   ```powershell
+   Copy-Item .env.worker.example .env.worker
+   notepad .env.worker
+   ```
+
+   Thay giá trị `DATABASE_URL` bằng External Database URL. Giữ `MATCHES_ENABLED=true`; đặt `AUTO_MATCH_START=00:00` để worker có thể ghép bot ngay trong ngày sau khi lịch thi được mở. Không gửi hoặc commit `.env.worker`.
+
+3. Mở Docker Desktop, rồi chạy worker:
+
+   ```powershell
+   docker compose -f docker-compose.remote-worker.yml up --build -d
+   docker compose -f docker-compose.remote-worker.yml logs -f worker
+   ```
+
+   Giữ Docker Desktop và cửa sổ worker hoạt động. Dùng `Ctrl+C` để thoát xem log; worker vẫn chạy nền. Dừng worker bằng `docker compose -f docker-compose.remote-worker.yml down`.
+
+4. Sau khi log cho thấy worker đã kết nối và đang chờ việc, vào Render → Web Service `oantuti-demo` → **Environment**, đổi `MATCHES_ENABLED` thành `true` rồi lưu để trang web nhận trạng thái worker đã sẵn sàng. Chờ dịch vụ web khởi động lại.
+5. Đăng nhập `/admin`, đặt giờ bắt đầu/kết thúc bao quanh thời điểm hiện tại và bật lịch. Hai đội cần có bài nộp ở trạng thái sẵn sàng. Worker sẽ biên dịch bài còn trong hàng đợi, rồi ghép các bot sẵn sàng theo lịch hằng ngày; với đúng hai đội, trận ghép sẽ là hai đội đó. Xem log worker và trang lịch sử/bảng xếp hạng để xác nhận kết quả.
+
+Nếu người chơi đã đăng ký trên Render, worker phải dùng đúng External Database URL của cơ sở dữ liệu Render đó. Không chạy `docker compose up` cục bộ song song để chờ các bài nộp trên website; cấu hình Compose mặc định tạo một database local riêng.
+
 ## Chạy đầy đủ trên máy cá nhân
 
 Yêu cầu: Docker Desktop đang mở.
