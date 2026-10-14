@@ -3,8 +3,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from sqlalchemy import select, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
-from .db import SessionLocal
+from .db import SessionLocal, engine
 from .models import Job, Match, Submission, WorkerNode
 from .event_schedule import get_event_state
 from .schema import ensure_schema
@@ -240,9 +241,8 @@ def heartbeat_loop(instance_token, stop_event):
                     stop_event.set()
                     return
                 node.last_seen = datetime.now(timezone.utc)
-        except Exception:
-            # The main loop will also reconnect or restart if DB is unavailable.
-            pass
+        except OperationalError:
+            engine.dispose()
 
 def main():
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", WORKER_ID):
@@ -256,21 +256,27 @@ def main():
     tz = ZoneInfo(os.getenv("EVENT_TIMEZONE", "Asia/Ho_Chi_Minh"))
     last_pair_day = None
     while not stop_event.is_set():
-        now = datetime.now(tz)
-        start = datetime.strptime(os.getenv("AUTO_MATCH_START", "19:00"), "%H:%M").time()
-        with SessionLocal() as db:
-            event_open = get_event_state(db, os.getenv("MATCHES_ENABLED", "false").lower() == "true", now)["matches_enabled"]
-        if os.getenv("AUTO_PAIR_ENABLED", "false").lower() == "true" and event_open and now.time() >= start and last_pair_day != now.date().isoformat():
-            try:
-                create_daily_pairings(now.date().isoformat())
-                last_pair_day = now.date().isoformat()
-            except Exception:
-                # Retry next loop; the database check makes pairing idempotent.
-                time.sleep(2)
-        with SessionLocal.begin() as db:
-            job = claim(db); job_id = job.id if job else None
-        if job_id: process(job_id)
-        else: time.sleep(1)
+        try:
+            now = datetime.now(tz)
+            start = datetime.strptime(os.getenv("AUTO_MATCH_START", "19:00"), "%H:%M").time()
+            with SessionLocal() as db:
+                event_open = get_event_state(db, os.getenv("MATCHES_ENABLED", "false").lower() == "true", now)["matches_enabled"]
+            if os.getenv("AUTO_PAIR_ENABLED", "false").lower() == "true" and event_open and now.time() >= start and last_pair_day != now.date().isoformat():
+                try:
+                    create_daily_pairings(now.date().isoformat())
+                    last_pair_day = now.date().isoformat()
+                except Exception:
+                    # Retry next loop; the database check makes pairing idempotent.
+                    time.sleep(2)
+            with SessionLocal.begin() as db:
+                job = claim(db); job_id = job.id if job else None
+            if job_id: process(job_id)
+            else: time.sleep(1)
+        except OperationalError:
+            # An external PostgreSQL connection can drop during a query.
+            # Discard pooled sockets and resume polling without restarting Docker.
+            engine.dispose()
+            time.sleep(3)
 
 def create_daily_pairings(day):
     import random
