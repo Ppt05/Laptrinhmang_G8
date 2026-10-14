@@ -258,13 +258,14 @@ def main():
     while not stop_event.is_set():
         try:
             now = datetime.now(tz)
-            start = datetime.strptime(os.getenv("AUTO_MATCH_START", "19:00"), "%H:%M").time()
             with SessionLocal() as db:
-                event_open = get_event_state(db, os.getenv("MATCHES_ENABLED", "false").lower() == "true", now)["matches_enabled"]
-            if os.getenv("AUTO_PAIR_ENABLED", "false").lower() == "true" and event_open and now.time() >= start and last_pair_day != now.date().isoformat():
+                state = get_event_state(db, os.getenv("MATCHES_ENABLED", "false").lower() == "true", now)
+            start_time = datetime.fromisoformat(state["start_at"]).time() if state["start_at"] else None
+            if (os.getenv("AUTO_PAIR_ENABLED", "true").lower() == "true" and state["matches_enabled"]
+                    and start_time and now.time() >= start_time and last_pair_day != now.date().isoformat()):
                 try:
-                    create_daily_pairings(now.date().isoformat())
-                    last_pair_day = now.date().isoformat()
+                    if create_daily_pairings(now.date().isoformat()):
+                        last_pair_day = now.date().isoformat()
                 except Exception:
                     # Retry next loop; the database check makes pairing idempotent.
                     time.sleep(2)
@@ -283,14 +284,17 @@ def create_daily_pairings(day):
     with SessionLocal.begin() as db:
         db.execute(text("SELECT pg_advisory_xact_lock(74620146)"))
         if db.scalar(select(Match.id).where(Match.event_day == day, Match.kind == "daily")):
-            return
+            return True
         players = db.execute(select(Submission.player_id, Submission.id).where(Submission.status == "ready").order_by(Submission.id.desc())).all()
         newest = {}
         for pid, sid in players:
             newest.setdefault(pid, sid)
         eligible = list(newest.items()); random.SystemRandom().shuffle(eligible)
+        if len(eligible) < 2:
+            return False
         for (pa, sa), (pb, sb) in zip(eligible[::2], eligible[1::2]):
             m = Match(player_a=pa, player_b=pb, submission_a=sa, submission_b=sb, event_day=day, kind="daily")
             db.add(m); db.flush(); db.add(Job(kind="match", payload=json.dumps({"match_id": m.id})))
+        return True
 
 if __name__ == "__main__": main()

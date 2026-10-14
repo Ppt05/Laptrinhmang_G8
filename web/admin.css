@@ -29,14 +29,9 @@
 .assignment-panel h2{font-size:20px;color:var(--navy);margin:8px 0}
 .assignment-panel h3{font-size:15px;color:var(--navy);margin:28px 0 12px}
 .assignment-panel .muted{font-size:13px;line-height:1.7}
-.assignment-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:20px}
-.assignment-grid label{display:grid;gap:8px;color:#425773;font-size:12px;font-weight:700}
-.assignment-grid select{width:100%;min-height:46px;border:1px solid #d5dfeb;border-radius:9px;background:#fff;color:var(--ink);padding:10px 13px;font:inherit;font-weight:500}
-.assignment-grid select:focus{outline:none;border-color:#75a9eb;box-shadow:0 0 0 3px #eaf3ff}
 .admin-table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
 .admin-table{width:100%;border-collapse:collapse;min-width:580px;font-size:12px;color:#425773}
 .admin-table th,.admin-table td{text-align:left;padding:12px 14px;border-bottom:1px solid var(--line)}
 .admin-table th{background:#f4f7fb;color:var(--navy);font-weight:800}
 .admin-table tr:last-child td{border-bottom:none}
-@media(max-width:700px){.assignment-grid{grid-template-columns:1fr}}
 @media(max-width:600px){.admin-wrap{margin:40px auto 60px}.date-grid{grid-template-columns:1fr}.admin-status-row{align-items:flex-start;flex-direction:column}.admin-actions .button{width:100%}.admin-page .topbar .brand{max-width:65vw}}

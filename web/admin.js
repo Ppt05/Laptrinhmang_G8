@@ -36,33 +36,16 @@ function showState(event) {
   badge.textContent = event.status === "open" ? "ĐANG MỞ" : event.status === "scheduled" ? "ĐÃ LÊN LỊCH" : event.status === "worker_unavailable" ? "CHƯA CÓ WORKER" : "ĐÃ ĐÓNG";
   badge.className = `state-badge ${event.status}`;
   $("#workerNote").textContent = event.worker_enabled
-    ? "Chế độ chạy trận đã bật. Số máy worker trực tuyến hiển thị ở mục Tạo trận đấu bên dưới."
+    ? "Chế độ chạy trận đã bật. Hệ thống tự ghép đội khi đến giờ; trạng thái worker hiển thị bên dưới."
     : "Lịch được lưu, nhưng chế độ chạy trận chưa bật trong cấu hình máy chủ.";
-}
-
-function replaceOptions(selector, items, previous, emptyLabel) {
-  const select = $(selector);
-  select.replaceChildren();
-  if (!items.length) {
-    const option = new Option(emptyLabel, "");
-    select.add(option);
-    return;
-  }
-  select.add(new Option("Chọn…", ""));
-  items.forEach(({ value, label }) => select.add(new Option(label, String(value))));
-  if (items.some(({ value }) => String(value) === previous)) select.value = previous;
 }
 
 async function loadAssignments(silent = false) {
   try {
-    const [teams, workers, matches] = await Promise.all([
-      api("/api/admin/teams"), api("/api/admin/workers"), api("/api/admin/matches"),
+    const [workers, matches] = await Promise.all([
+      api("/api/admin/workers"), api("/api/admin/matches"),
     ]);
-    const ready = teams.filter((team) => team.submission_id);
-    const teamOptions = ready.map((team) => ({ value: team.id, label: `${team.name} (#${team.id})` }));
     const onlineWorkers = workers.filter((worker) => worker.online);
-    replaceOptions("#teamA", teamOptions, $("#teamA").value, "Chưa có đội có bot sẵn sàng");
-    replaceOptions("#teamB", teamOptions, $("#teamB").value, "Chưa có đội có bot sẵn sàng");
 
     const tbody = $("#assignedMatches");
     tbody.replaceChildren();
@@ -83,7 +66,7 @@ async function loadAssignments(silent = false) {
         match.status === "done" ? (match.winner || "Hòa") : "—",
       ].forEach((value) => { row.insertCell().textContent = value; });
     });
-    if (!silent) setMessage("#assignMessage", `Có ${ready.length} đội sẵn sàng và ${onlineWorkers.length} máy worker trực tuyến: ${onlineWorkers.map((worker) => worker.id).join(", ") || "chưa có"}.`);
+    if (!silent) setMessage("#assignMessage", `${onlineWorkers.length} máy worker trực tuyến: ${onlineWorkers.map((worker) => worker.id).join(", ") || "chưa có"}.`);
   } catch (error) {
     if (!silent) setMessage("#assignMessage", error.message, true);
     if (error.message.includes("Phiên đăng nhập")) logout();
@@ -162,24 +145,6 @@ $("#adminLoginForm").addEventListener("submit", async (event) => {
 
 $("#loadSchedule").addEventListener("click", loadSchedule);
 $("#refreshAssignments").addEventListener("click", () => loadAssignments());
-$("#assignForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const player_a_id = Number($("#teamA").value);
-  const player_b_id = Number($("#teamB").value);
-  if (!player_a_id || !player_b_id) {
-    setMessage("#assignMessage", "Hãy chọn đủ hai đội.", true);
-    return;
-  }
-  try {
-    const result = await api("/api/admin/matches", {
-      method: "POST", body: JSON.stringify({ player_a_id, player_b_id }),
-    });
-    await loadAssignments(true);
-    setMessage("#assignMessage", `Đã tạo trận #${result.match_id}. Máy worker rảnh sẽ nhận trận từ hàng chờ.`);
-  } catch (error) {
-    setMessage("#assignMessage", error.message, true);
-  }
-});
 $("#adminForm").addEventListener("submit", (event) => { event.preventDefault(); saveSchedule(true); });
 $("#closeEvent").addEventListener("click", () => saveSchedule(false));
 $("#adminLogout").addEventListener("click", logout);

@@ -26,7 +26,7 @@ flowchart LR
     DB -->|bảng xếp hạng / lịch sử| WEB
 ```
 
-Render chạy website/API và PostgreSQL. Mỗi worker chạy trên một máy có Docker Desktop, có mã `WORKER_ID` riêng và kết nối tới cùng PostgreSQL trên Render. Admin chỉ chọn hai đội; trận vào hàng chờ chung. Máy rảnh lấy trận đầu tiên đang chờ và chạy hai bot. Nếu chỉ một máy bật, máy đó nhận toàn bộ trận chờ, lần lượt từng trận.
+Render chạy website/API và PostgreSQL. Mỗi worker chạy trên một máy có Docker Desktop, có mã `WORKER_ID` riêng và kết nối tới cùng PostgreSQL trên Render. Admin chỉ đặt thời gian mở và đóng thi đấu. Trong khung giờ đó, hệ thống tự ghép ngẫu nhiên các đội có bot hợp lệ mỗi ngày. Trận vào hàng chờ chung; máy rảnh lấy trận đầu tiên đang chờ. Nếu chỉ một máy bật, máy đó nhận toàn bộ trận chờ, lần lượt từng trận.
 
 ### Worker thực tế so với sơ đồ module
 
@@ -36,7 +36,7 @@ Luồng xử lý:
 
 1. Đội đăng ký/đăng nhập trên website và gửi mã nguồn bot. API lưu tài khoản, bài nộp và job biên dịch vào PostgreSQL.
 2. Worker lấy job chưa xử lý, biên dịch/kiểm tra bot trong sandbox. Artifact đã biên dịch được lưu trong volume Docker riêng của từng máy.
-3. Khi lịch đang mở, admin tạo trận đội 1–2 và trận đội 3–4. Hai job vào hàng chờ chung; `may-1` và `may-2` cùng lấy job đang chờ. PostgreSQL khóa job để mỗi trận chỉ một máy nhận. Nếu chỉ `may-1` bật, máy đó xử lý cả hai trận lần lượt. Nếu thiếu artifact trên máy nhận trận, worker tự biên dịch lại từ mã nguồn đã lưu trong PostgreSQL, rồi chạy hai bot và kiểm tra luật OTTv2.
+3. Khi lịch đang mở và đến giờ bắt đầu hằng ngày, worker ghép ngẫu nhiên các đội có bot đã biên dịch thành công: mỗi đội tối đa một trận ghép tự động/ngày; đội lẻ nghỉ lượt. Hai job ví dụ có thể là đội 1–2 và đội 3–4. `may-1` và `may-2` cùng lấy job đang chờ. PostgreSQL khóa job để mỗi trận chỉ một máy nhận. Nếu chỉ `may-1` bật, máy đó xử lý cả hai trận lần lượt. Nếu thiếu artifact trên máy nhận trận, worker tự biên dịch lại từ mã nguồn đã lưu trong PostgreSQL, rồi chạy hai bot và kiểm tra luật OTTv2.
 4. Worker ghi trận, diễn biến, điểm và đội thắng vào PostgreSQL; website đọc dữ liệu đó để hiển thị lịch sử và bảng xếp hạng.
 
 Website hiển thị `Đang mở` khi cấu hình cho phép và nằm trong khung giờ. Điều đó **không tự chứng minh máy worker đang hoạt động**. Nếu worker tắt, job sẽ nằm chờ hoặc trận không chạy. Chỉ để `MATCHES_ENABLED=true` khi đã bật worker.
@@ -98,7 +98,7 @@ docker compose up --build -d
 
 Trong `.env`, thay `POSTGRES_PASSWORD`, `ADMIN_API_KEY` và `ADMIN_PASSWORD` bằng giá trị riêng, khó đoán; giữ `ADMIN_USERNAME=admin`. Đặt `MATCHES_ENABLED=true` để chạy trận local và giữ `WORKER_ID=may-1`. `.env` bị Git bỏ qua; không tải file này lên GitHub.
 
-Mở [http://localhost:8000/](http://localhost:8000/) để đăng ký hai đội và nộp bot. Vào [http://localhost:8000/admin](http://localhost:8000/admin) để đăng nhập bằng `ADMIN_USERNAME`/`ADMIN_PASSWORD` trong `.env`, mở lịch và tạo trận giữa hai đội. Chế độ ghép tự động hằng ngày mặc định tắt (`AUTO_PAIR_ENABLED=false`) để không tạo trận ngoài danh sách admin chọn.
+Mở [http://localhost:8000/](http://localhost:8000/) để đăng ký hai đội và nộp bot. Vào [http://localhost:8000/admin](http://localhost:8000/admin) để đăng nhập bằng `ADMIN_USERNAME`/`ADMIN_PASSWORD` trong `.env`, đặt giờ mở và đóng thi đấu. Chế độ ghép tự động hằng ngày mặc định bật (`AUTO_PAIR_ENABLED=true`).
 
 ```powershell
 docker compose ps
@@ -119,7 +119,7 @@ docker compose logs -f api worker
    notepad .env.worker
    ```
 
-   Máy thứ nhất dùng `WORKER_ID=may-1`; máy thứ hai dùng `WORKER_ID=may-2`. Hai máy dùng cùng External Database URL nhưng có `WORKER_ID` khác nhau để ghi lại máy đã nhận trận. Giữ `AUTO_PAIR_ENABLED=false` để admin tự chọn từng cặp đấu. Không gửi URL này vào chat công khai, không đưa vào README, không commit `.env.worker`. Nếu bạn cùng tổ chức cần chạy worker, gửi URL qua kênh bí mật đáng tin cậy.
+   Máy thứ nhất dùng `WORKER_ID=may-1`; máy thứ hai dùng `WORKER_ID=may-2`. Hai máy dùng cùng External Database URL nhưng có `WORKER_ID` khác nhau để ghi lại máy đã nhận trận. Giữ `AUTO_PAIR_ENABLED=true` trên cả hai máy; khóa PostgreSQL bảo đảm không ghép trùng cặp trong ngày. Không gửi URL này vào chat công khai, không đưa vào README, không commit `.env.worker`. Nếu bạn cùng tổ chức cần chạy worker, gửi URL qua kênh bí mật đáng tin cậy.
 
 3. Mở Docker Desktop và chờ Engine chạy, sau đó bật worker:
 
@@ -135,16 +135,16 @@ docker compose logs -f api worker
    docker compose -f docker-compose.remote-worker.yml down
    ```
 
-4. Trong Render → Web Service `oantuti-demo` → **Environment**, bật `MATCHES_ENABLED=true` khi worker đang chạy. Trên trang `/admin`, mở lịch rồi chọn hai đội cho mỗi trận. Ví dụ tạo trận đội 1–2 và đội 3–4; hai worker đang rảnh có thể nhận và xử lý hai trận song song. Bảng trận hiển thị máy nào thực sự nhận trận.
+4. Trong Render → Web Service `oantuti-demo` → **Environment**, bật `MATCHES_ENABLED=true` khi worker đang chạy. Trên trang `/admin`, đặt giờ bắt đầu và kết thúc rồi lưu lịch. Tại giờ bắt đầu của mỗi ngày trong khoảng đó, hệ thống tự ghép các đội đã nộp bot hợp lệ. Hai worker đang rảnh có thể xử lý hai trận song song. Bảng trận hiển thị máy nào thực sự nhận trận.
 5. Giữ máy worker bật, kết nối Internet và ngăn Windows Sleep trong toàn bộ khung giờ. Nếu một máy tắt, máy còn lại tiếp tục lấy mọi trận **chưa bắt đầu** từ hàng chờ chung.
 
 ### Hai worker trên hai máy
 
 Trên máy bạn cùng nhóm, cài Git/Docker Desktop, clone repository, tạo `.env.worker` từ `.env.worker.example`, nhập **External Database URL của chính database Render này** và đổi thành `WORKER_ID=may-2`. Chạy các lệnh Compose ở trên. Máy bạn dùng `WORKER_ID=may-1`. Cả hai worker tự báo trạng thái trực tuyến về database để trang admin liệt kê. Không dùng `.env` local của máy mới nếu mục tiêu là xử lý bài thi trên Render; `.env` đó trỏ tới database local khác.
 
-Mỗi worker lấy job bất kỳ chưa bắt đầu từ hàng chờ chung, gồm biên dịch, thách đấu và trận do admin tạo. PostgreSQL dùng `FOR UPDATE SKIP LOCKED` để hai máy không lấy cùng một job. Khi nhận trận, worker ghi `WORKER_ID` của mình lên trận và tạo artifact cục bộ nếu máy đó chưa có. Không đặt cùng `WORKER_ID` trên hai máy.
+Mỗi worker lấy job bất kỳ chưa bắt đầu từ hàng chờ chung, gồm biên dịch, thách đấu và trận ghép tự động. PostgreSQL dùng `FOR UPDATE SKIP LOCKED` để hai máy không lấy cùng một job. Khi nhận trận, worker ghi `WORKER_ID` của mình lên trận và tạo artifact cục bộ nếu máy đó chưa có. Không đặt cùng `WORKER_ID` trên hai máy.
 
-Nếu máy tắt giữa lúc trận đang chạy, job có thể kẹt ở trạng thái `running`; phiên bản này chưa tự khôi phục trận bị gián đoạn. Các trận còn ở trạng thái `queued` sẽ được máy còn lại nhận. Nếu muốn bật ghép tự động hằng ngày, hệ thống có khóa PostgreSQL để tránh tạo trùng; mặc định vẫn là admin chọn cặp đấu.
+Nếu máy tắt giữa lúc trận đang chạy, job có thể kẹt ở trạng thái `running`; phiên bản này chưa tự khôi phục trận bị gián đoạn. Các trận còn ở trạng thái `queued` sẽ được máy còn lại nhận. Ghép tự động hằng ngày dùng khóa PostgreSQL để tránh tạo trùng khi hai worker cùng chạy.
 
 ## Tài khoản admin và bí mật
 
@@ -178,7 +178,7 @@ Sau khi sửa README hoặc mã trong thư mục dự án:
 ```powershell
 git status
 git add README.md .env.example .env.worker.example DEPLOY_RENDER_FREE.md app/ web/
-git commit -m "Use shared match queue for multiple workers"
+git commit -m "Pair teams automatically within admin schedule"
 git push origin main
 ```
 

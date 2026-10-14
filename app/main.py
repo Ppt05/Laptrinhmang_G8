@@ -5,7 +5,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from pathlib import Path
 from .db import SessionLocal
 from .models import EventControl, Job, Match, Player, Submission, WorkerNode
@@ -30,10 +30,6 @@ class Submit(BaseModel): language: str; source: str = Field(min_length=1)
 class Challenge(BaseModel): opponent_id: int
 class EventScheduleInput(BaseModel): start_at: datetime; end_at: datetime; enabled: bool
 class AdminLogin(BaseModel): username: str = Field(min_length=1, max_length=80); password: str = Field(min_length=1, max_length=256)
-class AssignedMatch(BaseModel):
-    player_a_id: int
-    player_b_id: int
-
 def matches_engine_enabled():
     return os.getenv("MATCHES_ENABLED", "false").lower() == "true"
 
@@ -108,15 +104,6 @@ def admin_set_event(body: EventScheduleInput, x_admin_key: str | None = Header(d
         return {"start_at": control.start_at, "end_at": control.end_at,
                 "enabled": control.enabled, "event": get_event_state(db, matches_engine_enabled())}
 
-@app.get("/api/admin/teams")
-def admin_teams(x_admin_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
-    require_admin(x_admin_key, authorization)
-    with SessionLocal() as db:
-        return [{"id": p.id, "name": p.name, "submission_id": s.id if s else None,
-                 "language": s.language if s else None}
-                for p in db.scalars(select(Player).order_by(Player.id)).all()
-                for s in [latest_ready(db, p.id)]]
-
 @app.get("/api/admin/workers")
 def admin_workers(x_admin_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
     require_admin(x_admin_key, authorization)
@@ -135,34 +122,6 @@ def admin_matches(x_admin_key: str | None = Header(default=None), authorization:
                  "status": m.status, "kind": m.kind, "event_day": m.event_day,
                  "winner": names.get(m.winner_id) if m.winner_id else None}
                 for m in matches]
-
-@app.post("/api/admin/matches")
-def admin_assign_match(body: AssignedMatch, x_admin_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
-    require_admin(x_admin_key, authorization)
-    if body.player_a_id == body.player_b_id:
-        raise HTTPException(400, "Hãy chọn hai đội khác nhau")
-    team_ids = sorted((body.player_a_id, body.player_b_id))
-    with SessionLocal.begin() as db:
-        if not get_event_state(db, matches_engine_enabled())["matches_enabled"]:
-            raise HTTPException(409, "Lịch thi đấu chưa mở")
-        teams = db.scalars(select(Player).where(Player.id.in_(team_ids)).order_by(Player.id).with_for_update()).all()
-        if len(teams) != 2:
-            raise HTTPException(404, "Không tìm thấy đủ hai đội")
-        submissions = {team_id: latest_ready(db, team_id) for team_id in team_ids}
-        if not all(submissions.values()):
-            raise HTTPException(409, "Cả hai đội cần có bot đã biên dịch thành công")
-        active = db.scalar(select(Match.id).where(Match.status.in_(["queued", "running"]),
-                            (Match.player_a.in_(team_ids)) | (Match.player_b.in_(team_ids))).limit(1))
-        if active:
-            raise HTTPException(409, "Một trong hai đội đang có trận chờ hoặc đang chạy")
-        m = Match(player_a=body.player_a_id, player_b=body.player_b_id,
-                  submission_a=submissions[body.player_a_id].id, submission_b=submissions[body.player_b_id].id,
-                  event_day=datetime.now(VN).date().isoformat(), kind="assigned")
-        db.add(m)
-        db.flush()
-        db.add(Job(kind="match", payload=json.dumps({"match_id": m.id})))
-        match_id = m.id
-    return {"match_id": match_id, "status": "queued"}
 
 @app.get("/health")
 def health(): return {"ok": True}
@@ -286,24 +245,3 @@ def leaderboard():
             rows.append({"player_id": p.id, "name": p.name, "points": pts, "wins": wins, "matches": len(matches)})
         return sorted(rows, key=lambda x: (-x["points"], -x["wins"], x["player_id"]))
 
-@app.post("/api/admin/pair-daily")
-def pair_daily(x_admin_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
-    require_admin(x_admin_key, authorization)
-    with SessionLocal() as db:
-        state = get_event_state(db, matches_engine_enabled())
-    if not state["matches_enabled"]:
-        raise HTTPException(503, "Chưa thể ghép trận: cần lịch đang mở và worker chạy bot")
-    now = datetime.now(VN)
-    day = now.date().isoformat()
-    with SessionLocal.begin() as db:
-        db.execute(text("SELECT pg_advisory_xact_lock(74620146)"))
-        if db.scalar(select(Match.id).where(Match.event_day == day, Match.kind == "daily")): return {"created": 0, "reason": "daily pairing already started"}
-        players = db.scalars(select(Player).order_by(Player.id)).all()
-        eligible = [(p, latest_ready(db, p.id)) for p in players]
-        eligible = [(p, s) for p, s in eligible if s]
-        secrets.SystemRandom().shuffle(eligible)
-        pairs = list(zip(eligible[::2], eligible[1::2])); created = 0
-        for (a, sa), (b, sb) in pairs:
-            m = Match(player_a=a.id, player_b=b.id, submission_a=sa.id, submission_b=sb.id, event_day=day, kind="daily")
-            db.add(m); db.flush(); db.add(Job(kind="match", payload=json.dumps({"match_id": m.id}))); created += 1
-        return {"created": created, "unpaired": len(eligible) % 2, "day": day}
