@@ -52,6 +52,8 @@
 .rules-dialog::backdrop{background:#0b1b31aa;backdrop-filter:blur(3px)}
 .rules-dialog .dialog-heading{margin-bottom:8px}
 .rules-dialog .dialog-heading h2{font-size:32px}
+.rules-section-title{margin:26px 0 13px;color:var(--navy);font-size:16px;letter-spacing:-.3px}
+.game-rules-title{border-top:1px solid var(--line);padding-top:21px}
 .rules-intro{max-width:720px;color:var(--muted);font-size:14px;line-height:1.8;margin-bottom:24px}
 .rules-dialog .rule-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 .rules-dialog .rule-card{min-height:172px;padding:20px}

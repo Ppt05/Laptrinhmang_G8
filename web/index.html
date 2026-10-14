@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/app.css?v=6">
+  <link rel="stylesheet" href="/assets/app.css?v=7">
   <link rel="stylesheet" href="/assets/status.css?v=4">
 </head>
 <body>
@@ -18,7 +18,7 @@
       <span>Oẳn Tù Tì chiến thuật · Thi đấu bằng lập trình</span>
     </a>
     <nav aria-label="Điều hướng chính">
-      <button class="nav-link" type="button" data-open-rules>Luật chơi</button><a href="#thi-dau">Thi đấu</a><a href="#bang-xep-hang">Bảng xếp hạng</a>
+      <button class="nav-link" type="button" data-open-rules>Thể lệ dự thi</button><a href="#thi-dau">Thi đấu</a><a href="#bang-xep-hang">Bảng xếp hạng</a>
     </nav>
     <div class="account-actions">
       <button id="navLogin" class="button button-outline button-small" type="button">Đăng nhập</button>
@@ -35,7 +35,7 @@
         <p class="hero-text">Lập trình bot của bạn, đưa lên bàn cờ OTTv2 và xem chiến thuật đối đầu qua từng nước đi.</p>
         <div class="hero-actions">
           <a class="button button-blue" href="#thi-dau">Tham gia cuộc thi <span aria-hidden="true">→</span></a>
-          <button class="button button-outline" type="button" data-open-rules>Xem luật chơi</button>
+          <button class="button button-outline" type="button" data-open-rules>Xem thể lệ dự thi</button>
         </div>
         <div class="hero-facts"><span><b>9×9</b> bàn cờ</span><span><b>C++ / Python</b> ngôn ngữ</span><span><b>OTTv2</b> chiến thuật</span></div>
       </div>
@@ -98,14 +98,20 @@
 
   <footer class="footer"><div class="wrap footer-inner"><span>Oẳn Tù Tì chiến thuật · Thi đấu bằng lập trình</span><a href="/admin">Ban tổ chức</a><a href="#top">Về đầu trang ↑</a></div></footer>
   <dialog id="rulesDialog" class="rules-dialog" aria-labelledby="rulesTitle">
-    <div class="dialog-heading"><div><div class="eyebrow">OTTv2 · LUẬT THI ĐẤU</div><h2 id="rulesTitle">Luật chơi</h2></div><button id="closeRules" class="dialog-close" type="button" aria-label="Đóng luật chơi">×</button></div>
-    <p class="rules-intro">Hai bot điều khiển hai đội quân trên bàn cờ 9×9. Mỗi lượt, bot chọn một quân và một ô đến hợp lệ.</p>
+    <div class="dialog-heading"><div><div class="eyebrow">OTTv2 · THỂ LỆ DỰ THI</div><h2 id="rulesTitle">Hướng dẫn dành cho các đội</h2></div><button id="closeRules" class="dialog-close" type="button" aria-label="Đóng thể lệ">×</button></div>
+    <p class="rules-intro">Mỗi đội tạo một tài khoản, viết bot bằng C++17 hoặc Python 3 rồi nộp mã nguồn trên website. Bot của hai đội sẽ tự thi đấu theo luật OTTv2 khi ban tổ chức mở lịch trận.</p>
+    <h3 class="rules-section-title">Đội đăng ký và nộp bài như thế nào?</h3>
     <div class="rule-grid">
-      <article class="rule-card"><span class="rule-number">01</span><div class="rule-symbol">↗</div><h3>Di chuyển</h3><p>Mỗi lượt đi đúng một ô theo một trong tám hướng. Xanh (South) đi trước; Hồng (North) đi sau.</p></article>
-      <article class="rule-card"><span class="rule-number">02</span><div class="cycle"><span>ĐẤM</span><b>›</b><span>KÉO</span><b>›</b><span>LÁ</span></div><h3>Khắc chế và ăn quân</h3><p>Đấm ăn Kéo, Kéo ăn Lá, Lá ăn Đấm. Quân cùng loại hoặc quân không thể ăn nhau sẽ chặn ô.</p></article>
-      <article class="rule-card"><span class="rule-number">03</span><div class="rule-symbol">◎</div><h3>Điều kiện thắng</h3><p>Ăn hết một loại quân đối thủ hoặc đưa quân tới đích: Bắc tới a1, Nam tới i9.</p></article>
-      <article class="rule-card"><span class="rule-number">04</span><div class="rule-symbol">↻</div><h3>Hòa trận</h3><p>Trận hòa nếu lặp lại cùng thế cờ ba lần hoặc chạm giới hạn 200 nước đi mà chưa có bên thắng.</p></article>
-      <article class="rule-card rule-protocol"><span class="rule-number">05</span><div class="rule-symbol">{ }</div><h3>Bot giao tiếp</h3><p>Bot đọc từng dòng JSON từ <code>stdin</code>, chọn trong danh sách nước đi hợp lệ và in JSON một dòng ra <code>stdout</code>, ví dụ <code>{"piece_id":"S01","to":"a4"}</code>.</p></article>
+      <article class="rule-card"><span class="rule-number">01</span><div class="rule-symbol">♙</div><h3>Tạo tài khoản đội</h3><p>Chọn “Đăng ký”, nhập tên đội và mật khẩu. Không cần mã cuộc thi. Tài khoản dùng để nộp bot và theo dõi kết quả.</p></article>
+      <article class="rule-card"><span class="rule-number">02</span><div class="rule-symbol">&lt;/&gt;</div><h3>Viết bot bằng C++17 hoặc Python 3</h3><p>Bot nhận trạng thái bàn cờ và danh sách nước đi hợp lệ qua <code>stdin</code>. Hãy chọn một nước trong danh sách đó.</p></article>
+      <article class="rule-card"><span class="rule-number">03</span><div class="rule-symbol">↑</div><h3>Dán và nộp mã nguồn</h3><p>Đăng nhập, chọn ngôn ngữ ở mục “Nộp bài dự thi”, dán toàn bộ mã vào ô “Mã nguồn bot” rồi bấm “Nộp mã nguồn”. Giới hạn 100 KB; không tải tệp lên.</p></article>
+      <article class="rule-card"><span class="rule-number">04</span><div class="rule-symbol">{ }</div><h3>Định dạng bot phải trả về</h3><p>In đúng một dòng JSON cho mỗi lượt, gồm mã quân và ô đến; ví dụ <code>{"piece_id":"S01","to":"a4"}</code>. In kết quả ra <code>stdout</code> và flush; không in lời giải thích vào đó.</p></article>
+      <article class="rule-card rule-protocol"><span class="rule-number">05</span><div class="rule-symbol">◷</div><h3>Kiểm tra trạng thái và thi đấu</h3><p>Theo dõi trạng thái bài nộp trong “Lịch sử nộp bài”. Chỉ bot sẵn sàng mới được ghép đấu; trận tự chạy khi ban tổ chức mở lịch. Bot trả sai định dạng, nước không hợp lệ hoặc quá 1,5 giây một lượt sẽ bị xử thua trận.</p></article>
+    </div>
+    <h3 class="rules-section-title game-rules-title">Tóm tắt luật trong một trận OTTv2</h3>
+    <div class="rule-grid game-rule-grid">
+      <article class="rule-card"><span class="rule-number">A</span><div class="rule-symbol">↗</div><h3>Di chuyển và ăn quân</h3><p>Bàn cờ 9×9. Mỗi lượt đi một ô theo một trong tám hướng; Xanh đi trước. Đấm thắng Kéo, Kéo thắng Lá, Lá thắng Đấm. Quân cùng loại hoặc không khắc chế được sẽ chặn ô.</p></article>
+      <article class="rule-card"><span class="rule-number">B</span><div class="rule-symbol">◎</div><h3>Thắng, hòa và xếp hạng</h3><p>Thắng khi ăn hết một loại quân đối thủ hoặc đưa quân tới đích (Bắc: a1, Nam: i9). Lặp thế cờ ba lần hoặc đủ 200 nước chưa phân thắng bại thì hòa. Bảng xếp hạng tính 1 điểm thắng, 0,5 điểm hòa, 0 điểm thua.</p></article>
     </div>
   </dialog>
   <dialog id="accountDialog" class="account-dialog">
