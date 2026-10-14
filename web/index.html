@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/app.css?v=7">
+  <link rel="stylesheet" href="/assets/app.css?v=8">
   <link rel="stylesheet" href="/assets/status.css?v=4">
 </head>
 <body>
@@ -18,7 +18,7 @@
       <span>Oẳn Tù Tì chiến thuật · Thi đấu bằng lập trình</span>
     </a>
     <nav aria-label="Điều hướng chính">
-      <button class="nav-link" type="button" data-open-rules>Thể lệ dự thi</button><a href="#thi-dau">Thi đấu</a><a href="#bang-xep-hang">Bảng xếp hạng</a>
+      <button class="nav-link" type="button" data-open-rules>Thể lệ dự thi</button><a href="#thi-dau">Thi đấu</a><button class="nav-link" type="button" data-open-leaderboard>Bảng xếp hạng</button>
     </nav>
     <div class="account-actions">
       <button id="navLogin" class="button button-outline button-small" type="button">Đăng nhập</button>
@@ -87,16 +87,21 @@
       </div>
     </section>
 
-    <section id="bang-xep-hang" class="section leaderboard-section">
-      <div class="wrap">
-        <div class="section-heading"><div><div class="eyebrow">BẢNG XẾP HẠNG</div><h2>Những đội dẫn đầu</h2></div><p>Điểm được cập nhật theo kết quả các trận đã hoàn tất.</p></div>
-        <div class="panel table-panel leaderboard-panel"><div class="table-scroll"><table><thead><tr><th>Hạng</th><th>Đội</th><th>Số trận</th><th>Trận thắng</th><th>Điểm</th></tr></thead><tbody id="leaderboardBody"></tbody></table></div><div id="leaderboardEmpty" class="table-empty hidden">Bảng xếp hạng chưa có dữ liệu.</div></div>
-      </div>
-    </section>
     <section class="closing wrap"><div><div class="eyebrow">READY, BOT?</div><h2>Ý tưởng của bạn đi được bao xa?</h2></div><a class="button button-blue" href="#thi-dau">Vào khu vực thi đấu ↑</a></section>
   </main>
 
   <footer class="footer"><div class="wrap footer-inner"><span>Oẳn Tù Tì chiến thuật · Thi đấu bằng lập trình</span><a href="/admin">Ban tổ chức</a><a href="#top">Về đầu trang ↑</a></div></footer>
+  <dialog id="leaderboardDialog" class="leaderboard-dialog" aria-labelledby="leaderboardTitle">
+    <div class="dialog-heading"><div><div class="eyebrow">OTTv2 · KẾT QUẢ THI ĐẤU</div><h2 id="leaderboardTitle">Bảng xếp hạng</h2></div><button id="closeLeaderboard" class="dialog-close" type="button" aria-label="Đóng bảng xếp hạng">×</button></div>
+    <p class="leaderboard-intro">Thắng 1 điểm · hòa 0,5 điểm · thua 0 điểm. Bảng chỉ tính các trận đã hoàn tất.</p>
+    <div class="leaderboard-filters" role="group" aria-label="Khoảng thời gian xếp hạng">
+      <button id="leaderboardSeason" class="leaderboard-filter active" type="button" aria-pressed="true">Toàn mùa</button>
+      <button id="leaderboardDaily" class="leaderboard-filter" type="button" aria-pressed="false">Theo ngày</button>
+      <label id="leaderboardDayWrap" class="leaderboard-day hidden">Ngày ghép trận <input id="leaderboardDay" type="date"></label>
+    </div>
+    <p id="leaderboardPeriod" class="leaderboard-period">Tổng điểm từ đầu cuộc thi.</p>
+    <div class="panel table-panel leaderboard-panel"><div class="table-scroll"><table><thead><tr><th>Hạng</th><th>Đội</th><th>Số trận</th><th>Trận thắng</th><th>Điểm</th></tr></thead><tbody id="leaderboardBody"></tbody></table></div><div id="leaderboardEmpty" class="table-empty hidden">Bảng xếp hạng chưa có dữ liệu.</div></div>
+  </dialog>
   <dialog id="rulesDialog" class="rules-dialog" aria-labelledby="rulesTitle">
     <div class="dialog-heading"><div><div class="eyebrow">OTTv2 · THỂ LỆ DỰ THI</div><h2 id="rulesTitle">Hướng dẫn dành cho các đội</h2></div><button id="closeRules" class="dialog-close" type="button" aria-label="Đóng thể lệ">×</button></div>
     <p class="rules-intro">Mỗi đội tạo một tài khoản, viết bot bằng C++17 hoặc Python 3 rồi nộp mã nguồn trên website. Bot của hai đội sẽ tự thi đấu theo luật OTTv2 khi ban tổ chức mở lịch trận.</p>
@@ -135,6 +140,6 @@
     </div>
     <div id="signedIn" class="signed-in hidden"><div class="signed-avatar">♟</div><div class="signed-copy"><span class="eyebrow">ĐỘI ĐANG ĐĂNG NHẬP</span><h3 id="teamName">—</h3><button id="logoutBtn" class="text-button" type="button">Đăng xuất</button></div></div>
   </dialog>
-  <script src="/assets/app.js?v=6" defer></script>
+  <script src="/assets/app.js?v=7" defer></script>
 </body>
 </html>

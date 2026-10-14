@@ -89,6 +89,38 @@ rulesDialog.addEventListener("click", (event) => {
   if (event.target === event.currentTarget) rulesDialog.close();
 });
 
+const leaderboardDialog = $("#leaderboardDialog");
+let leaderboardMode = "season";
+let leaderboardRequestId = 0;
+function vietnamToday() {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+function openLeaderboard() {
+  if (!leaderboardDialog.open) leaderboardDialog.showModal();
+  refreshLeaderboard();
+}
+$$('[data-open-leaderboard]').forEach((button) => button.addEventListener("click", openLeaderboard));
+$("#closeLeaderboard").addEventListener("click", () => leaderboardDialog.close());
+leaderboardDialog.addEventListener("click", (event) => {
+  if (event.target === event.currentTarget) leaderboardDialog.close();
+});
+function setLeaderboardMode(mode) {
+  leaderboardMode = mode;
+  const daily = mode === "daily";
+  $("#leaderboardSeason").classList.toggle("active", !daily);
+  $("#leaderboardDaily").classList.toggle("active", daily);
+  $("#leaderboardSeason").setAttribute("aria-pressed", String(!daily));
+  $("#leaderboardDaily").setAttribute("aria-pressed", String(daily));
+  $("#leaderboardDayWrap").classList.toggle("hidden", !daily);
+  if (daily && !$("#leaderboardDay").value) $("#leaderboardDay").value = vietnamToday();
+  refreshLeaderboard();
+}
+$("#leaderboardSeason").addEventListener("click", () => setLeaderboardMode("season"));
+$("#leaderboardDaily").addEventListener("click", () => setLeaderboardMode("daily"));
+$("#leaderboardDay").addEventListener("change", refreshLeaderboard);
+
 $$(".tab").forEach((tab) => tab.addEventListener("click", () => activateTab(tab.dataset.tab)));
 
 $("#registerForm").addEventListener("submit", async (event) => {
@@ -167,11 +199,22 @@ function escapeHtml(value) {
 }
 
 async function refreshLeaderboard() {
+  const requestId = ++leaderboardRequestId;
+  if (leaderboardMode === "daily" && !$("#leaderboardDay").value) $("#leaderboardDay").value = vietnamToday();
+  const day = leaderboardMode === "daily" ? $("#leaderboardDay").value : "";
+  $("#leaderboardPeriod").textContent = day ? `Kết quả các trận ghép ngày ${day.split("-").reverse().join("/")}.` : "Tổng điểm từ đầu cuộc thi.";
   try {
-    const rows = await request("/api/leaderboard");
+    const rows = await request(`/api/leaderboard${day ? `?day=${encodeURIComponent(day)}` : ""}`);
+    if (requestId !== leaderboardRequestId) return;
     $("#leaderboardBody").innerHTML = rows.map((r, i) => `<tr><td><span class="rank-badge${i < 3 ? " top" : ""}">${i + 1}</span></td><td><strong>${escapeHtml(r.name)}</strong></td><td>${r.matches}</td><td>${r.wins}</td><td><strong>${Number(r.points).toLocaleString("vi-VN")}</strong></td></tr>`).join("");
+    $("#leaderboardEmpty").textContent = day ? "Ngày này chưa có trận hoàn tất." : "Bảng xếp hạng chưa có dữ liệu.";
     $("#leaderboardEmpty").classList.toggle("hidden", rows.length > 0);
-  } catch { $("#leaderboardEmpty").textContent = "Chưa tải được bảng xếp hạng."; }
+  } catch {
+    if (requestId !== leaderboardRequestId) return;
+    $("#leaderboardBody").replaceChildren();
+    $("#leaderboardEmpty").textContent = "Chưa tải được bảng xếp hạng.";
+    $("#leaderboardEmpty").classList.remove("hidden");
+  }
 }
 
 $("#refreshBtn").addEventListener("click", () => { refreshDashboard(); refreshLeaderboard(); });
@@ -195,6 +238,7 @@ async function refreshEventStatus() {
 async function init() {
   paintSession();
   refreshLeaderboard();
+  if (location.hash === "#bang-xep-hang") openLeaderboard();
   if (token()) {
     try {
       const player = await request("/api/me");

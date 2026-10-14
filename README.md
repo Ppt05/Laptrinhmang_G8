@@ -135,6 +135,8 @@ Máy còn lại tiếp tục nhận các job **chưa bắt đầu**. Khi cập n
 3. Xem trạng thái bài nộp. Hệ thống chỉ dùng phiên bản hợp lệ mới nhất có trạng thái `ready` khi ghép trận.
 4. Sau trận, xem lịch sử đấu và bảng xếp hạng trên website. Thắng được 1 điểm, hòa 0,5 điểm, thua 0 điểm.
 
+Bấm **Bảng xếp hạng** trên thanh điều hướng để mở cửa sổ kết quả. **Toàn mùa** cộng điểm mọi trận đã hoàn tất; **Theo ngày** chỉ hiện các trận có ngày ghép tương ứng. Bộ lọc theo ngày không thay đổi bảng điểm toàn mùa.
+
 Ở mỗi lượt, bot đọc **một dòng JSON** từ `stdin`, trong đó có bàn cờ và danh sách `legal_moves`. Bot chọn một nước hợp lệ và in **một dòng JSON** ra `stdout`, ví dụ:
 
 ```json

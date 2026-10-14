@@ -64,3 +64,18 @@
 .footer{padding:20px 0}
 .footer-inner{font-size:11px}
 @media(max-width:700px){.topbar{height:64px;padding:0 16px}.brand{max-width:54vw;font-size:11px;line-height:1.4}.account-actions{gap:6px}.topbar .button-small{min-height:34px;padding:7px 10px;font-size:10px}.board-card{max-width:390px;padding:14px}.board-frame{padding:4px}.piece{width:clamp(22px,7vw,31px);height:clamp(22px,7vw,31px)}.account-dialog{padding:21px}.rules-dialog .rule-grid{grid-template-columns:1fr}.rules-dialog .rule-protocol{grid-column:auto}.rules-dialog .dialog-heading h2{font-size:26px}.topbar nav{display:flex;gap:14px}.topbar nav a,.topbar nav button{font-size:10px}.topbar .brand{max-width:34vw}}
+
+.leaderboard-dialog{width:min(900px,calc(100% - 28px));max-height:min(90vh,900px);overflow:auto;border:1px solid var(--line);border-radius:18px;padding:clamp(20px,4vw,36px);background:#fff;color:var(--ink);box-shadow:0 24px 80px #071a3266}
+.leaderboard-dialog::backdrop{background:#0b1b31aa;backdrop-filter:blur(3px)}
+.leaderboard-dialog .dialog-heading{margin-bottom:10px}
+.leaderboard-dialog .dialog-heading h2{font-size:clamp(25px,4vw,34px)}
+.leaderboard-intro,.leaderboard-period{color:var(--muted);font-size:12px;line-height:1.7}
+.leaderboard-intro{margin-bottom:20px}
+.leaderboard-period{margin:12px 0 16px}
+.leaderboard-filters{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.leaderboard-filter{border:1px solid #cbd7e5;border-radius:9px;background:#fff;color:var(--navy);padding:10px 14px;font-size:12px;font-weight:700;cursor:pointer}
+.leaderboard-filter.active{background:var(--navy);border-color:var(--navy);color:#fff}
+.leaderboard-day{display:flex;align-items:center;gap:9px;margin-left:auto;color:#52647a;font-size:11px;font-weight:700}
+.leaderboard-day input{border:1px solid #cbd7e5;border-radius:8px;padding:8px 10px;color:var(--navy);background:#fff;font-size:12px}
+.leaderboard-dialog .leaderboard-panel{box-shadow:none}
+@media(max-width:700px){.leaderboard-day{width:100%;margin:7px 0 0;justify-content:space-between}.leaderboard-dialog .leaderboard-panel th,.leaderboard-dialog .leaderboard-panel td{padding:11px 12px}}

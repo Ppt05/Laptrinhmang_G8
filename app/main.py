@@ -1,5 +1,5 @@
 import base64, hashlib, hmac, json, os, re, secrets, time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse
@@ -234,12 +234,24 @@ def get_match(match_id: int):
         return {"id": m.id, "player_a": m.player_a, "player_b": m.player_b, "kind": m.kind, "status": m.status, "worker_id": m.worker_id, "winner_id": m.winner_id, "points_a": m.points_a, "points_b": m.points_b, "detail": json.loads(m.detail) if m.detail else None}
 
 @app.get("/api/leaderboard")
-def leaderboard():
+def leaderboard(day: str | None = None):
+    if day:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+            raise HTTPException(400, "Ngày phải có định dạng YYYY-MM-DD")
+        try:
+            date.fromisoformat(day)
+        except ValueError:
+            raise HTTPException(400, "Ngày phải có định dạng YYYY-MM-DD")
     with SessionLocal() as db:
         players = db.scalars(select(Player).order_by(Player.id)).all()
         rows = []
         for p in players:
-            matches = db.scalars(select(Match).where(Match.status == "done", (Match.player_a == p.id) | (Match.player_b == p.id))).all()
+            query = select(Match).where(Match.status == "done", (Match.player_a == p.id) | (Match.player_b == p.id))
+            if day:
+                query = query.where(Match.event_day == day)
+            matches = db.scalars(query).all()
+            if day and not matches:
+                continue
             pts = sum(m.points_a if m.player_a == p.id else m.points_b for m in matches)
             wins = sum(m.winner_id == p.id for m in matches)
             rows.append({"player_id": p.id, "name": p.name, "points": pts, "wins": wins, "matches": len(matches)})
