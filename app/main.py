@@ -33,7 +33,6 @@ class AdminLogin(BaseModel): username: str = Field(min_length=1, max_length=80);
 class AssignedMatch(BaseModel):
     player_a_id: int
     player_b_id: int
-    worker_id: str = Field(min_length=1, max_length=64)
 
 def matches_engine_enabled():
     return os.getenv("MATCHES_ENABLED", "false").lower() == "true"
@@ -140,17 +139,12 @@ def admin_matches(x_admin_key: str | None = Header(default=None), authorization:
 @app.post("/api/admin/matches")
 def admin_assign_match(body: AssignedMatch, x_admin_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
     require_admin(x_admin_key, authorization)
-    worker_id = body.worker_id.strip()
-    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", worker_id):
-        raise HTTPException(400, "Mã máy chỉ dùng chữ thường, số, dấu - hoặc _")
     if body.player_a_id == body.player_b_id:
         raise HTTPException(400, "Hãy chọn hai đội khác nhau")
     team_ids = sorted((body.player_a_id, body.player_b_id))
     with SessionLocal.begin() as db:
         if not get_event_state(db, matches_engine_enabled())["matches_enabled"]:
             raise HTTPException(409, "Lịch thi đấu chưa mở")
-        if not worker_online(db.get(WorkerNode, worker_id)):
-            raise HTTPException(409, "Máy worker này chưa trực tuyến")
         teams = db.scalars(select(Player).where(Player.id.in_(team_ids)).order_by(Player.id).with_for_update()).all()
         if len(teams) != 2:
             raise HTTPException(404, "Không tìm thấy đủ hai đội")
@@ -163,12 +157,12 @@ def admin_assign_match(body: AssignedMatch, x_admin_key: str | None = Header(def
             raise HTTPException(409, "Một trong hai đội đang có trận chờ hoặc đang chạy")
         m = Match(player_a=body.player_a_id, player_b=body.player_b_id,
                   submission_a=submissions[body.player_a_id].id, submission_b=submissions[body.player_b_id].id,
-                  event_day=datetime.now(VN).date().isoformat(), kind="assigned", worker_id=worker_id)
+                  event_day=datetime.now(VN).date().isoformat(), kind="assigned")
         db.add(m)
         db.flush()
-        db.add(Job(kind="match", payload=json.dumps({"match_id": m.id}), worker_id=worker_id))
+        db.add(Job(kind="match", payload=json.dumps({"match_id": m.id})))
         match_id = m.id
-    return {"match_id": match_id, "worker_id": worker_id, "status": "queued"}
+    return {"match_id": match_id, "status": "queued"}
 
 @app.get("/health")
 def health(): return {"ok": True}

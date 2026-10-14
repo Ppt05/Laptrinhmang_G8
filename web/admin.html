@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/app.css?v=7">
-  <link rel="stylesheet" href="/assets/admin.css?v=3">
+  <link rel="stylesheet" href="/assets/admin.css?v=4">
 </head>
 <body class="admin-page">
   <header class="topbar">
@@ -19,7 +19,7 @@
   <main class="admin-wrap">
     <div class="eyebrow">KHU VỰC BAN TỔ CHỨC</div>
     <h1>Quản lý thi đấu</h1>
-    <p class="admin-lead">Đặt giờ mở cuộc thi, sau đó chọn hai đội và giao trận cho một máy worker đang trực tuyến.</p>
+    <p class="admin-lead">Đặt giờ mở cuộc thi, sau đó chọn hai đội để tạo trận. Máy worker nào rảnh sẽ nhận trận từ hàng chờ chung.</p>
     <section id="adminLoginPanel" class="panel admin-panel admin-login-panel">
       <h2>Đăng nhập ban tổ chức</h2>
       <p class="muted">Tài khoản mặc định tên <code>admin</code>. Mật khẩu được lưu riêng trong cấu hình môi trường của Render.</p>
@@ -49,27 +49,26 @@
       </form>
     </section>
     <section class="panel admin-panel assignment-panel">
-      <div class="eyebrow">PHÂN CÔNG TRẬN</div>
-      <h2>Chọn hai đội và máy chạy trận</h2>
-      <p class="muted">Mỗi máy đặt một <code>WORKER_ID</code> khác nhau trong <code>.env.worker</code>. Bật Docker Desktop và worker trên cả hai máy để chúng xuất hiện ở đây.</p>
+      <div class="eyebrow">TẠO TRẬN ĐẤU</div>
+      <h2>Chọn hai đội để đấu</h2>
+      <p class="muted">Hai máy worker cùng lấy trận từ hàng chờ. Nếu chỉ một máy bật, máy đó xử lý tất cả trận đang chờ.</p>
       <form id="assignForm">
         <div class="assignment-grid">
           <label>Đội 1<select id="teamA" required></select></label>
           <label>Đội 2<select id="teamB" required></select></label>
-          <label>Máy worker<select id="workerId" required></select></label>
         </div>
         <div class="admin-actions">
-          <button class="button button-blue" type="submit">Giao trận cho máy này</button>
+          <button class="button button-blue" type="submit">Tạo trận đấu</button>
           <button class="button button-outline" id="refreshAssignments" type="button">Tải lại danh sách</button>
         </div>
         <p id="assignMessage" class="admin-message" aria-live="polite"></p>
       </form>
       <h3>Trận gần đây</h3>
-      <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Mã</th><th>Hai đội</th><th>Máy</th><th>Trạng thái</th><th>Kết quả</th></tr></thead><tbody id="assignedMatches"></tbody></table></div>
+      <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Mã</th><th>Hai đội</th><th>Máy đã nhận</th><th>Trạng thái</th><th>Kết quả</th></tr></thead><tbody id="assignedMatches"></tbody></table></div>
     </section>
-    <aside class="admin-help"><strong>Lưu ý về worker</strong><p>Website và database chạy trên Render; worker chạy trên máy của ban tổ chức. Mỗi trận được giao chỉ chạy trên máy có đúng <code>WORKER_ID</code>. Máy tắt hoặc Docker Desktop dừng thì trận của máy đó chờ trong hàng đợi.</p></aside>
+    <aside class="admin-help"><strong>Lưu ý về worker</strong><p>Website và database chạy trên Render; worker chạy trên máy của ban tổ chức. Các máy cùng đọc hàng chờ PostgreSQL. Nếu một máy tắt, máy còn lại tiếp tục nhận các trận chưa bắt đầu.</p></aside>
     </section>
   </main>
-  <script src="/assets/admin.js?v=3" defer></script>
+  <script src="/assets/admin.js?v=4" defer></script>
 </body>
 </html>

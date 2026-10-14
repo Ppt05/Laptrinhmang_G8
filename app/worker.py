@@ -2,7 +2,7 @@ import base64, json, os, re, secrets, selectors, struct, subprocess, tempfile, t
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
-from sqlalchemy import or_, select, text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .models import Job, Match, Submission, WorkerNode
@@ -188,9 +188,18 @@ def play_match(db: Session, m: Match):
                 subprocess.run(["docker", "rm", "-f", cid], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def claim(db):
-    job = db.scalar(select(Job).where(Job.status == "queued", or_(Job.worker_id.is_(None), Job.worker_id == WORKER_ID))
+    job = db.scalar(select(Job).where(Job.status == "queued")
                     .order_by(Job.id).with_for_update(skip_locked=True).limit(1))
-    if job: job.status = "running"; job.attempts += 1; db.flush(); return job
+    if job:
+        job.status = "running"
+        job.worker_id = WORKER_ID
+        job.attempts += 1
+        if job.kind == "match":
+            match = db.get(Match, json.loads(job.payload)["match_id"])
+            if match:
+                match.worker_id = WORKER_ID
+        db.flush()
+        return job
 
 def process(job_id):
     with SessionLocal.begin() as db:
