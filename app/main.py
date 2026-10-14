@@ -109,7 +109,7 @@ def health(): return {"ok": True}
 @app.post("/api/admin/login")
 def admin_login(body: AdminLogin):
     expected_username = os.getenv("ADMIN_USERNAME", "admin")
-    expected_password = os.getenv("ADMIN_PASSWORD", "")
+    expected_password = os.getenv("ADMIN_PASSWORD") or os.getenv("ADMIN_API_KEY", "")
     if not expected_password:
         raise HTTPException(503, "Chưa cấu hình tài khoản ban tổ chức")
     if not secrets.compare_digest(body.username, expected_username) or not secrets.compare_digest(body.password, expected_password):

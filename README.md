@@ -14,7 +14,7 @@ Website tổ chức thi lập trình bot cho game Oẳn Tù Tì chiến thuật 
 
 Website demo: <https://oantuti-demo.onrender.com/>.
 
-Trang quản trị lịch thi: <https://oantuti-demo.onrender.com/admin/>. Tài khoản mặc định có tên `admin`; mật khẩu nằm trong Render Dashboard → dịch vụ `oantuti-demo` → **Environment** → `ADMIN_PASSWORD`. Không chia sẻ mật khẩu hoặc đưa lên GitHub. Nếu Render chưa có biến này, cần đồng bộ Blueprint từ repo để Render tạo mật khẩu.
+Trang quản trị lịch thi: <https://oantuti-demo.onrender.com/admin/>. Tên đăng nhập mặc định là `admin`. Mật khẩu nằm trong Render Dashboard → dịch vụ `oantuti-demo` → **Environment**: dùng `ADMIN_PASSWORD` nếu biến này đã được tạo; nếu chưa có, dùng `ADMIN_API_KEY`. Không chia sẻ secret hoặc đưa lên GitHub.
 
 Render Free hiện chạy website/API và cơ sở dữ liệu, **chưa chạy worker**. Vì vậy, bản Render hiện tại nhận đăng ký và bài nộp nhưng chưa biên dịch bot, chưa ghép hai đội và chưa ghi kết quả trận. Trang admin có thể lưu lịch, nhưng mở lịch không tự làm trận chạy nếu thiếu worker. Không bật `MATCHES_ENABLED=true` trên Render để giả lập worker.
 
@@ -38,7 +38,7 @@ Yêu cầu: Docker Desktop đang mở.
    ```
 
 4. Mở <http://localhost:8000>, đăng ký hai đội và nộp mã bot cho mỗi đội.
-5. Mở <http://localhost:8000/admin>, đăng nhập bằng `ADMIN_USERNAME` và `ADMIN_PASSWORD` trong `.env`, đặt thời điểm bắt đầu/kết thúc sao cho hiện tại nằm trong khung giờ đó, rồi lưu lịch. Worker sẽ ghép các bot đã biên dịch thành công.
+5. Chờ cả hai bài có trạng thái sẵn sàng. Mở <http://localhost:8000/admin>, đăng nhập bằng `ADMIN_USERNAME` và `ADMIN_PASSWORD` trong `.env`, đặt thời điểm bắt đầu/kết thúc sao cho hiện tại nằm trong khung giờ đó, rồi lưu lịch. Worker ghép các bot sẵn sàng một lần mỗi ngày từ mốc `AUTO_MATCH_START`.
 
 Xem log bằng `docker compose logs -f api worker`; dừng bằng `docker compose down`.
 
