@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10294b">
+  <meta name="description" content="Cuộc thi lập trình bot Oẳn Tù Tì chiến thuật OTTv2.">
+  <title>Oẳn Tù Tì — Thi đấu lập trình</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/app.css?v=4">
+  <link rel="stylesheet" href="/assets/status.css?v=4">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#top" aria-label="Oẳn Tù Tì, về đầu trang">
+      <span class="brand-mark"><i></i><i></i><i></i></span>
+      <span>OTT<span class="brand-light">v2</span><small>CODE TOURNAMENT</small></span>
+    </a>
+    <nav aria-label="Điều hướng chính">
+      <a href="#the-le">Thể lệ</a><a href="#thi-dau">Thi đấu</a><a href="#bang-xep-hang">Bảng xếp hạng</a>
+    </nav>
+    <button id="navAccount" class="button button-navy button-small" type="button">Đăng nhập</button>
+  </header>
+
+  <main id="top">
+    <section class="hero wrap">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="live-dot"></span> CUỘC THI LẬP TRÌNH BOT</div>
+        <h1>Không ra kéo búa bao.<br><span>Hãy viết chiến thuật.</span></h1>
+        <p class="hero-text">Lập trình bot của bạn, đưa lên bàn cờ OTTv2 và xem chiến thuật đối đầu qua từng nước đi.</p>
+        <div class="hero-actions">
+          <a class="button button-blue" href="#thi-dau">Tham gia cuộc thi <span aria-hidden="true">→</span></a>
+          <a class="button button-outline" href="#the-le">Xem luật chơi</a>
+        </div>
+        <div class="hero-facts"><span><b>9×9</b> bàn cờ</span><span><b>C++ / Python</b> ngôn ngữ</span><span><b>OTTv2</b> chiến thuật</span></div>
+      </div>
+      <div class="board-card" aria-label="Minh họa bàn cờ Oẳn Tù Tì 9 nhân 9">
+        <div class="board-top"><span>OTTv2 / BOARD</span><span class="board-live"><i></i> BOT MATCH</span></div>
+        <div class="board" aria-hidden="true">
+          <span class="piece paper p1">L</span><span class="piece rock p2">Đ</span><span class="piece scissors p3">K</span>
+          <span class="piece scissors p4">K</span><span class="piece paper p5">L</span><span class="piece rock p6">Đ</span>
+          <span class="piece rock p7">Đ</span><span class="piece scissors p8">K</span><span class="piece paper p9">L</span>
+          <span class="piece paper p10">L</span><span class="piece rock p11">Đ</span><span class="piece scissors p12">K</span>
+        </div>
+        <div class="board-bottom"><span><b class="legend-blue"></b> XANH / SOUTH</span><span>9 × 9 GRID</span><span><b class="legend-red"></b> HỒNG / NORTH</span></div>
+      </div>
+    </section>
+
+    <section class="status-band">
+      <div class="wrap status-inner"><span class="status-icon">i</span><p id="eventStatus">Đang tải trạng thái cuộc thi…</p><a href="#thi-dau">Xem khu vực thi đấu <span aria-hidden="true">↗</span></a></div>
+    </section>
+
+    <section id="the-le" class="section wrap">
+      <div class="section-heading"><div><div class="eyebrow">CÁCH CHƠI</div><h2>Chiến thắng bằng nước đi</h2></div><p>Bot đọc trạng thái bàn cờ, chọn quân và nước đi hợp lệ. Hệ thống xử lý luật, chạy trận và cập nhật kết quả.</p></div>
+      <div class="rule-grid">
+        <article class="rule-card"><span class="rule-number">01</span><div class="rule-symbol">↗</div><h3>Di chuyển chiến thuật</h3><p>Mỗi lượt đi một quân đúng một ô theo một trong tám hướng. Xanh (South) đi trước.</p></article>
+        <article class="rule-card"><span class="rule-number">02</span><div class="cycle"><span>ĐẤM</span><b>›</b><span>KÉO</span><b>›</b><span>LÁ</span></div><h3>Khắc chế và ăn quân</h3><p>Đấm ăn Kéo, Kéo ăn Lá, Lá ăn Đấm. Quân cùng loại hoặc bị khắc chế sẽ chặn ô.</p></article>
+        <article class="rule-card"><span class="rule-number">03</span><div class="rule-symbol">◎</div><h3>Điều kiện thắng</h3><p>Ăn hết toàn bộ một loại quân đối thủ, hoặc đưa quân phe mình tới ô đích: Bắc tới a1, Nam tới i9.</p></article>
+      </div>
+    </section>
+
+    <section id="thi-dau" class="section contest-section">
+      <div class="wrap">
+        <div class="section-heading"><div><div class="eyebrow">KHU VỰC THÍ SINH</div><h2>Đăng ký và thi đấu</h2></div><p>Tạo tài khoản đội để nộp bot. Sau khi đăng nhập, bạn có thể xem trạng thái các lần nộp và lịch sử trận.</p></div>
+        <div class="contest-grid">
+          <article id="accountCard" class="panel account-panel">
+            <div id="signedIn" class="signed-in hidden">
+              <div class="signed-avatar">♟</div><div class="signed-copy"><span class="eyebrow">ĐỘI ĐANG ĐĂNG NHẬP</span><h3 id="teamName">—</h3><button id="logoutBtn" class="text-button" type="button">Đăng xuất</button></div>
+            </div>
+            <div id="authForms">
+              <div class="tab-row" role="tablist"><button class="tab active" data-tab="login" type="button">Đăng nhập</button><button class="tab" data-tab="register" type="button">Đăng ký đội</button></div>
+              <form id="loginForm" class="auth-form">
+                <h3>Chào mừng trở lại</h3><p>Đăng nhập để quản lý bot và theo dõi thành tích đội.</p>
+                <label>Tên đội<input name="name" required minlength="2" autocomplete="username" placeholder="Ví dụ: Byte Fighters"></label>
+                <label>Mật khẩu<input name="password" required type="password" autocomplete="current-password" placeholder="Mật khẩu đội"></label>
+                <button class="button button-navy full" type="submit">Đăng nhập <span>→</span></button>
+                <div class="form-message" aria-live="polite"></div>
+              </form>
+              <details class="legacy"><summary>Đội đã đăng ký bằng token trước đây?</summary><form id="claimForm" class="nested-form"><label>Tên đội<input name="name" required></label><label>Token đội cũ<input name="registration_token" required type="password"></label><label>Tạo mật khẩu mới<input name="password" required type="password" minlength="8"></label><button class="button button-outline full" type="submit">Thiết lập đăng nhập</button><div class="form-message" aria-live="polite"></div></form></details>
+              <form id="registerForm" class="auth-form hidden">
+                <h3>Tạo tài khoản đội</h3><p>Một tài khoản dùng để nộp và theo dõi bot của đội.</p>
+                <label>Tên đội<input name="name" required minlength="2" maxlength="60" autocomplete="organization" placeholder="Ví dụ: Byte Fighters"></label>
+                <label>Mật khẩu<input name="password" required type="password" minlength="8" autocomplete="new-password" placeholder="Ít nhất 8 ký tự"></label>
+                <label>Mã đăng ký cuộc thi<input name="registration_code" required placeholder="Nhận từ ban tổ chức"></label>
+                <button class="button button-blue full" type="submit">Đăng ký đội <span>→</span></button>
+                <div class="form-message" aria-live="polite"></div>
+              </form>
+            </div>
+          </article>
+
+          <article class="panel submit-panel">
+            <div class="panel-title"><div><div class="eyebrow">BOT SUBMISSION</div><h3>Nộp bài dự thi</h3></div><span class="file-badge">C++17 · Python 3</span></div>
+            <p class="muted">Mỗi lần nộp tạo một phiên bản mới. Hệ thống biên dịch và kiểm tra trạng thái tự động.</p>
+            <div id="submitGuestHint" class="empty-state">Đăng nhập hoặc đăng ký đội để nộp bot. <a href="#thi-dau" class="inline-link">Đến phần tài khoản →</a></div>
+            <form id="submitForm">
+              <label>Ngôn ngữ<select name="language"><option value="python">Python 3</option><option value="cpp">C++17</option></select></label>
+              <label>Mã nguồn bot<textarea name="source" required spellcheck="false" placeholder="Dán mã nguồn bot OTTv2 của đội tại đây…"></textarea></label>
+              <div class="submit-tools"><button id="sampleBtn" class="text-button" type="button">Chèn bot mẫu</button><span>Giới hạn 100 KB</span></div>
+              <button class="button button-blue full" type="submit">Nộp mã nguồn <span>↑</span></button>
+              <div class="form-message" aria-live="polite"></div>
+            </form>
+            <div class="protocol-note"><span>?</span><p>Bot đọc từng dòng JSON từ <code>stdin</code> và trả một nước đi <code>{"piece_id":"S01","to":"a4"}</code> trên <code>stdout</code>.</p><a href="/docs" target="_blank" rel="noreferrer">Tài liệu API ↗</a></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section wrap dashboard-section">
+      <div class="section-heading"><div><div class="eyebrow">TÀI KHOẢN ĐỘI</div><h2>Theo dõi cuộc thi</h2></div><button id="refreshBtn" class="button button-outline button-small" type="button">↻ Làm mới</button></div>
+      <div id="dashboardHint" class="empty-state">Đăng nhập để xem lịch sử nộp bot và kết quả thi đấu của đội bạn.</div>
+      <div id="dashboard" class="dashboard-grid hidden">
+        <article class="panel table-panel"><div class="panel-title"><div><div class="eyebrow">SUBMISSIONS</div><h3>Lịch sử nộp bài</h3></div></div><div class="table-scroll"><table><thead><tr><th>Phiên bản</th><th>Ngôn ngữ</th><th>Thời gian</th><th>Trạng thái</th></tr></thead><tbody id="submissionsBody"></tbody></table></div><div id="submissionEmpty" class="table-empty hidden">Chưa có bài nộp nào.</div></article>
+        <article class="panel table-panel"><div class="panel-title"><div><div class="eyebrow">MATCH HISTORY</div><h3>Lịch sử đấu</h3></div></div><div class="table-scroll"><table><thead><tr><th>Trận</th><th>Đối thủ</th><th>Kết quả</th><th>Điểm</th></tr></thead><tbody id="matchesBody"></tbody></table></div><div id="matchesEmpty" class="table-empty hidden">Chưa có trận đấu nào.</div></article>
+      </div>
+    </section>
+
+    <section id="bang-xep-hang" class="section leaderboard-section">
+      <div class="wrap">
+        <div class="section-heading"><div><div class="eyebrow">BẢNG XẾP HẠNG</div><h2>Những đội dẫn đầu</h2></div><p>Điểm được cập nhật theo kết quả các trận đã hoàn tất.</p></div>
+        <div class="panel table-panel leaderboard-panel"><div class="table-scroll"><table><thead><tr><th>Hạng</th><th>Đội</th><th>Số trận</th><th>Trận thắng</th><th>Điểm</th></tr></thead><tbody id="leaderboardBody"></tbody></table></div><div id="leaderboardEmpty" class="table-empty hidden">Bảng xếp hạng chưa có dữ liệu.</div></div>
+      </div>
+    </section>
+    <section class="closing wrap"><div><div class="eyebrow">READY, BOT?</div><h2>Ý tưởng của bạn đi được bao xa?</h2></div><a class="button button-blue" href="#thi-dau">Vào khu vực thi đấu ↑</a></section>
+  </main>
+
+  <footer class="footer"><div class="wrap footer-inner"><a class="brand footer-brand" href="#top"><span class="brand-mark"><i></i><i></i><i></i></span><span>OTT<span class="brand-light">v2</span><small>CODE TOURNAMENT</small></span></a><span>Oẳn Tù Tì chiến thuật · Thi đấu bằng lập trình</span><a href="/docs" target="_blank" rel="noreferrer">API docs ↗</a></div></footer>
+  <script src="/assets/app.js?v=4" defer></script>
+</body>
+</html>

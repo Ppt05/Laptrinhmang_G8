@@ -1,0 +1,91 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: oantuti
+      POSTGRES_USER: oantuti
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oantuti -d oantuti"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [private]
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://oantuti:${POSTGRES_PASSWORD}@db:5432/oantuti
+      PORT: 8000
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - artifacts:/app/data/artifacts:ro
+    networks: [private]
+
+  proxy:
+    image: caddy:2
+    profiles: [public]
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    networks: [private]
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://oantuti:${POSTGRES_PASSWORD}@db:5432/oantuti
+      DOCKER_HOST: unix:///var/run/docker.sock
+    depends_on:
+      db:
+        condition: service_healthy
+      sandbox-runtime:
+        condition: service_started
+    volumes:
+      - artifacts:/app/data/artifacts
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [private]
+
+  sandbox-runtime:
+    image: oantuti-sandbox:dev
+    build:
+      context: .
+      dockerfile: sandbox/Dockerfile
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["sleep infinity"]
+    restart: unless-stopped
+    networks: [private]
+
+volumes:
+  pgdata:
+  artifacts:
+  caddy_data:
+  caddy_config:
+
+networks:
+  private:
+    driver: bridge
