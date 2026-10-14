@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/app.css?v=6">
-  <link rel="stylesheet" href="/assets/admin.css?v=1">
+  <link rel="stylesheet" href="/assets/app.css?v=7">
+  <link rel="stylesheet" href="/assets/admin.css?v=2">
 </head>
 <body class="admin-page">
   <header class="topbar">
@@ -19,14 +19,23 @@
   <main class="admin-wrap">
     <div class="eyebrow">KHU VỰC BAN TỔ CHỨC</div>
     <h1>Quản lý lịch thi đấu</h1>
-    <p class="admin-lead">Đặt thời gian mở và đóng. Trạng thái lịch được lưu trên máy chủ và hiển thị ở trang thi.</p>
+    <p class="admin-lead">Đăng nhập tài khoản ban tổ chức để đặt thời gian mở và đóng trận. Lịch được lưu trên máy chủ và hiển thị ở trang thi.</p>
+    <section id="adminLoginPanel" class="panel admin-panel admin-login-panel">
+      <h2>Đăng nhập ban tổ chức</h2>
+      <p class="muted">Tài khoản mặc định tên <code>admin</code>. Mật khẩu được lưu riêng trong cấu hình môi trường của Render.</p>
+      <form id="adminLoginForm">
+        <label>Tên đăng nhập<input id="adminUsername" value="admin" autocomplete="username" required></label>
+        <label>Mật khẩu<input id="adminPassword" type="password" autocomplete="current-password" required></label>
+        <button class="button button-navy" type="submit">Đăng nhập</button>
+        <p id="loginMessage" class="admin-message" aria-live="polite"></p>
+      </form>
+    </section>
+    <section id="adminControls" class="hidden">
     <section class="panel admin-panel">
       <div class="admin-status-row"><div><div class="eyebrow">TRẠNG THÁI HIỆN TẠI</div><h2 id="eventState">Chưa tải trạng thái</h2></div><span id="stateBadge" class="state-badge">—</span></div>
       <p id="workerNote" class="worker-note">Nhập khóa quản trị để tải lịch.</p>
       <form id="adminForm">
-        <label>Khóa quản trị
-          <input id="adminKey" type="password" autocomplete="off" placeholder="Lấy trong Render → Environment → ADMIN_API_KEY" required>
-        </label>
+        <div class="admin-signed-in"><span>Đã đăng nhập ban tổ chức</span><button id="adminLogout" class="text-button" type="button">Đăng xuất</button></div>
         <button class="button button-navy" id="loadSchedule" type="button">Tải lịch đã lưu</button>
         <div class="date-grid">
           <label>Bắt đầu (giờ Việt Nam)<input id="startAt" type="datetime-local" required></label>
@@ -40,7 +49,8 @@
       </form>
     </section>
     <aside class="admin-help"><strong>Lưu ý về worker</strong><p>Nút quản trị đặt lịch và đóng/mở trạng thái. Trên Render hiện chưa có worker chạy sandbox cho bot; khi khung giờ mở, trang sẽ báo rõ nếu chưa thể chạy trận. Không bật thi đấu thật trước khi worker được triển khai.</p></aside>
+    </section>
   </main>
-  <script src="/assets/admin.js?v=1" defer></script>
+  <script src="/assets/admin.js?v=2" defer></script>
 </body>
 </html>

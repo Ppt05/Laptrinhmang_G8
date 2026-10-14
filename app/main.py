@@ -1,4 +1,4 @@
-import json, os, re, secrets
+import base64, hashlib, hmac, json, os, re, secrets, time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -30,14 +30,34 @@ class ClaimAccount(BaseModel): name: str = Field(min_length=2, max_length=60); r
 class Submit(BaseModel): language: str; source: str = Field(min_length=1)
 class Challenge(BaseModel): opponent_id: int
 class EventScheduleInput(BaseModel): start_at: datetime; end_at: datetime; enabled: bool
+class AdminLogin(BaseModel): username: str = Field(min_length=1, max_length=80); password: str = Field(min_length=1, max_length=256)
 
 def matches_engine_enabled():
     return os.getenv("MATCHES_ENABLED", "false").lower() == "true"
 
-def require_admin(key):
-    expected = os.getenv("ADMIN_API_KEY", "")
-    if not expected or not secrets.compare_digest(key or "", expected):
-        raise HTTPException(401, "Admin key không hợp lệ")
+def make_admin_token(username: str) -> str:
+    expires = int(time.time()) + 8 * 60 * 60
+    payload = base64.urlsafe_b64encode(json.dumps({"sub": username, "exp": expires}, separators=(",", ":")).encode()).decode().rstrip("=")
+    secret = os.getenv("ADMIN_API_KEY", "").encode()
+    signature = hmac.new(secret, payload.encode(), hashlib.sha256).hexdigest()
+    return f"{payload}.{signature}"
+
+def require_admin(key=None, authorization=None):
+    expected_key = os.getenv("ADMIN_API_KEY", "")
+    if expected_key and secrets.compare_digest(key or "", expected_key):
+        return
+    token = authorization.removeprefix("Bearer ") if authorization and authorization.startswith("Bearer ") else ""
+    try:
+        payload, signature = token.rsplit(".", 1)
+        expected_signature = hmac.new(expected_key.encode(), payload.encode(), hashlib.sha256).hexdigest()
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        valid = (expected_key and secrets.compare_digest(signature, expected_signature)
+                 and claims.get("sub") == os.getenv("ADMIN_USERNAME", "admin")
+                 and int(claims.get("exp", 0)) > int(time.time()))
+    except (ValueError, TypeError, json.JSONDecodeError):
+        valid = False
+    if not valid:
+        raise HTTPException(401, "Phiên đăng nhập ban tổ chức không hợp lệ hoặc đã hết hạn")
 
 def latest_ready(db, player_id):
     return db.scalar(select(Submission).where(Submission.player_id == player_id, Submission.status == "ready").order_by(Submission.id.desc()))
@@ -57,8 +77,8 @@ def meta():
                 **get_event_state(db, matches_engine_enabled())}
 
 @app.get("/api/admin/event")
-def admin_get_event(x_admin_key: str | None = Header(default=None)):
-    require_admin(x_admin_key)
+def admin_get_event(x_admin_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
+    require_admin(x_admin_key, authorization)
     with SessionLocal() as db:
         control = db.get(EventControl, 1)
         return {"start_at": control.start_at if control else None,
@@ -67,8 +87,8 @@ def admin_get_event(x_admin_key: str | None = Header(default=None)):
                 "event": get_event_state(db, matches_engine_enabled())}
 
 @app.put("/api/admin/event")
-def admin_set_event(body: EventScheduleInput, x_admin_key: str | None = Header(default=None)):
-    require_admin(x_admin_key)
+def admin_set_event(body: EventScheduleInput, x_admin_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
+    require_admin(x_admin_key, authorization)
     start, end = as_vietnam_time(body.start_at), as_vietnam_time(body.end_at)
     if end <= start:
         raise HTTPException(400, "Thời điểm kết thúc phải sau thời điểm bắt đầu")
@@ -85,6 +105,16 @@ def admin_set_event(body: EventScheduleInput, x_admin_key: str | None = Header(d
 
 @app.get("/health")
 def health(): return {"ok": True}
+
+@app.post("/api/admin/login")
+def admin_login(body: AdminLogin):
+    expected_username = os.getenv("ADMIN_USERNAME", "admin")
+    expected_password = os.getenv("ADMIN_PASSWORD", "")
+    if not expected_password:
+        raise HTTPException(503, "Chưa cấu hình tài khoản ban tổ chức")
+    if not secrets.compare_digest(body.username, expected_username) or not secrets.compare_digest(body.password, expected_password):
+        raise HTTPException(401, "Tên đăng nhập hoặc mật khẩu không đúng")
+    return {"access_token": make_admin_token(expected_username), "token_type": "bearer", "expires_in": 28800}
 
 @app.post("/api/register")
 def register(body: Register):
@@ -195,8 +225,8 @@ def leaderboard():
         return sorted(rows, key=lambda x: (-x["points"], -x["wins"], x["player_id"]))
 
 @app.post("/api/admin/pair-daily")
-def pair_daily(x_admin_key: str | None = Header(default=None)):
-    require_admin(x_admin_key)
+def pair_daily(x_admin_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
+    require_admin(x_admin_key, authorization)
     with SessionLocal() as db:
         state = get_event_state(db, matches_engine_enabled())
     if not state["matches_enabled"]:

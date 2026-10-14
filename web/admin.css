@@ -3,6 +3,13 @@
 .admin-wrap h1{font-size:clamp(30px,5vw,42px);letter-spacing:-1.5px;color:var(--navy);margin:8px 0 10px}
 .admin-lead{font-size:14px;line-height:1.8;color:var(--muted);max-width:620px;margin-bottom:28px}
 .admin-panel{padding:clamp(20px,4vw,34px)}
+.admin-login-panel{max-width:520px;margin-bottom:22px}
+.admin-login-panel h2{font-size:19px;color:var(--navy);margin:0 0 8px}
+.admin-login-panel .muted{margin-bottom:16px}
+.admin-login-panel label{display:grid;gap:8px;color:#425773;font-size:12px;font-weight:700;margin:15px 0}
+.admin-login-panel input{width:100%;min-height:46px;border:1px solid #d5dfeb;border-radius:9px;background:#fff;color:var(--ink);padding:11px 13px;font-size:13px;outline:none}
+.admin-login-panel input:focus{border-color:#75a9eb;box-shadow:0 0 0 3px #eaf3ff}
+.admin-signed-in{display:flex;align-items:center;justify-content:space-between;margin:0 0 16px;color:#526981;font-size:12px}
 .admin-status-row{display:flex;justify-content:space-between;align-items:center;gap:16px;padding-bottom:20px;border-bottom:1px solid var(--line)}
 .admin-status-row h2{font-size:20px;color:var(--navy);margin:5px 0 0}
 .state-badge{border-radius:30px;background:#edf1f6;color:#697b91;font-size:10px;font-weight:800;letter-spacing:.5px;padding:9px 12px;white-space:nowrap}

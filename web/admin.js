@@ -1,24 +1,23 @@
 const $ = (selector) => document.querySelector(selector);
-let adminKey = "";
+const sessionKey = "ottv2_admin_session";
+let adminToken = sessionStorage.getItem(sessionKey) || "";
 
-function localInput(value) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-}
-
-function setMessage(text, error = false) {
-  const output = $("#adminMessage");
+function setMessage(selector, text, error = false) {
+  const output = $(selector);
   output.textContent = text;
   output.classList.toggle("error", error);
 }
 
+function setSignedIn(signedIn) {
+  $("#adminLoginPanel").classList.toggle("hidden", signedIn);
+  $("#adminControls").classList.toggle("hidden", !signedIn);
+}
+
 async function api(url, options = {}) {
-  const response = await fetch(url, {
-    ...options,
-    headers: { ...(options.headers || {}), "x-admin-key": adminKey, ...(options.body ? { "Content-Type": "application/json" } : {}) },
-  });
+  const headers = { ...(options.headers || {}) };
+  if (adminToken) headers.Authorization = `Bearer ${adminToken}`;
+  if (options.body) headers["Content-Type"] = "application/json";
+  const response = await fetch(url, { ...options, headers });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.detail || `Lỗi máy chủ (${response.status})`);
   return data;
@@ -30,7 +29,7 @@ function showState(event) {
     scheduled: "Đã lên lịch",
     closed: "Đã đóng",
     worker_unavailable: "Đến giờ nhưng worker chưa sẵn sàng",
-    not_scheduled: "Chưa mở lịch thi",
+    not_scheduled: "Chưa mở lịch",
   };
   $("#eventState").textContent = labels[event.status] || "Chưa rõ trạng thái";
   const badge = $("#stateBadge");
@@ -38,7 +37,7 @@ function showState(event) {
   badge.className = `state-badge ${event.status}`;
   $("#workerNote").textContent = event.worker_enabled
     ? "Worker chạy bot đã được bật trên máy chủ."
-    : "Lịch điều khiển đã sẵn sàng; máy chủ Render hiện chưa có worker sandbox để thực thi bot và ghi kết quả trận.";
+    : "Lịch được lưu, nhưng Render hiện chưa có worker sandbox để biên dịch bot và chạy trận.";
 }
 
 function readSchedule() {
@@ -51,30 +50,71 @@ function readSchedule() {
   return { start_at: start.toISOString(), end_at: end.toISOString() };
 }
 
+function localInput(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
 async function loadSchedule() {
-  adminKey = $("#adminKey").value.trim();
-  if (!adminKey) return setMessage("Nhập khóa quản trị trước.", true);
   try {
     const data = await api("/api/admin/event");
     $("#startAt").value = localInput(data.start_at);
     $("#endAt").value = localInput(data.end_at);
     showState(data.event);
-    setMessage("Đã tải lịch từ máy chủ.");
-  } catch (error) { setMessage(error.message, true); }
+    setMessage("#adminMessage", "Đã tải lịch từ máy chủ.");
+  } catch (error) {
+    setMessage("#adminMessage", error.message, true);
+    if (error.message.includes("Phiên đăng nhập")) logout();
+  }
 }
 
 async function saveSchedule(enabled) {
-  adminKey = $("#adminKey").value.trim();
-  if (!adminKey) return setMessage("Nhập khóa quản trị trước.", true);
   try {
-    const schedule = readSchedule();
-    const data = await api("/api/admin/event", { method: "PUT", body: JSON.stringify({ ...schedule, enabled }) });
+    const data = await api("/api/admin/event", {
+      method: "PUT",
+      body: JSON.stringify({ ...readSchedule(), enabled }),
+    });
     showState(data.event);
-    setMessage(enabled ? "Đã lưu lịch; hệ thống sẽ mở/đóng theo hai mốc giờ này." : "Đã đóng lịch thi đấu.");
-  } catch (error) { setMessage(error.message, true); }
+    setMessage("#adminMessage", enabled
+      ? "Đã lưu lịch; hệ thống sẽ mở/đóng theo thời gian này."
+      : "Đã đóng lịch thi đấu.");
+  } catch (error) {
+    setMessage("#adminMessage", error.message, true);
+  }
 }
+
+function logout() {
+  adminToken = "";
+  sessionStorage.removeItem(sessionKey);
+  setSignedIn(false);
+}
+
+$("#adminLoginForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  setMessage("#loginMessage", "Đang đăng nhập…");
+  try {
+    const result = await api("/api/admin/login", {
+      method: "POST",
+      body: JSON.stringify({ username: $("#adminUsername").value.trim(), password: $("#adminPassword").value }),
+    });
+    adminToken = result.access_token;
+    sessionStorage.setItem(sessionKey, adminToken);
+    $("#adminPassword").value = "";
+    setSignedIn(true);
+    await loadSchedule();
+  } catch (error) {
+    setMessage("#loginMessage", error.message, true);
+  }
+});
 
 $("#loadSchedule").addEventListener("click", loadSchedule);
 $("#adminForm").addEventListener("submit", (event) => { event.preventDefault(); saveSchedule(true); });
 $("#closeEvent").addEventListener("click", () => saveSchedule(false));
-$("#adminKey").addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); loadSchedule(); } });
+$("#adminLogout").addEventListener("click", logout);
+
+if (adminToken) {
+  setSignedIn(true);
+  loadSchedule();
+}
