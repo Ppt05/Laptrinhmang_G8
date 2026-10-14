@@ -54,13 +54,17 @@ def compile_bot(language):
 
 
 def run_bot(language):
-    path = pathlib.Path("/tmp/bot/program")
-    pathlib.Path("/tmp/bot").mkdir(parents=True, exist_ok=True)
-    deadline = time.monotonic() + 15
-    while not path.exists() and time.monotonic() < deadline:
-        time.sleep(0.05)
-    if not path.exists():
+    path = pathlib.Path("/tmp/program")
+    header = sys.stdin.buffer.read(4)
+    if len(header) != 4:
         return 70
+    size = int.from_bytes(header, "big")
+    if size < 1 or size > 5_000_000:
+        return 70
+    artifact = sys.stdin.buffer.read(size)
+    if len(artifact) != size:
+        return 70
+    path.write_bytes(artifact)
     if language == "cpp":
         os.chmod(path, 0o500)
         command = [str(path)]

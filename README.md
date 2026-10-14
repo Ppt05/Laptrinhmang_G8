@@ -1,101 +1,188 @@
-# Oẳn Tù Tì OTTv2
+# Oẳn Tù Tì OTTv2 — thi đấu bằng bot
 
-Website tổ chức thi lập trình bot cho game Oẳn Tù Tì chiến thuật trên bàn cờ 9×9. Mỗi đội nộp chương trình bằng Python 3 hoặc C++17. Bộ chấm chạy hai bot với nhau; người chơi không tự bấm nước đi.
+Website tổ chức cuộc thi lập trình bot cho game OTTv2 trên bàn cờ 9×9. Mỗi đội đăng ký tài khoản, nộp chương trình bằng Python hoặc C++17; hệ thống tự chạy hai bot trong trận và lưu kết quả. Người chơi không cần trực tuyến khi bot thi đấu.
 
-## Cách một trận diễn ra
+## Liên kết sản phẩm
 
-1. Hai đội đăng ký tài khoản trên website.
-2. Mỗi đội dán mã bot vào **Thi đấu → Nộp bài dự thi**.
-3. Worker biên dịch bài và chỉ dùng bài có trạng thái sẵn sàng.
-4. Ban tổ chức mở lịch. Worker ghép bot, chạy trận và lưu kết quả.
-5. Các đội xem kết quả ở **Lịch sử đấu** và **Bảng xếp hạng**.
+- **Website cuộc thi:** [https://oantuti-demo.onrender.com/](https://oantuti-demo.onrender.com/)
+- **Trang quản trị lịch thi:** [https://oantuti-demo.onrender.com/admin](https://oantuti-demo.onrender.com/admin)
 
-## Trạng thái bản Render
+Trang quản trị yêu cầu đăng nhập. Không ghi mật khẩu thật, `ADMIN_API_KEY`, token đội hoặc URL cơ sở dữ liệu vào README/GitHub. Muốn người khác quản trị, hãy chia sẻ thông tin đăng nhập qua cách riêng tư; người chỉ chạy worker không cần mật khẩu admin.
 
-Website demo: <https://oantuti-demo.onrender.com/>.
+## Kiến trúc đang chạy
 
-Trang quản trị lịch thi: <https://oantuti-demo.onrender.com/admin/>. Tên đăng nhập mặc định là `admin`. Mật khẩu nằm trong Render Dashboard → dịch vụ `oantuti-demo` → **Environment**: dùng `ADMIN_PASSWORD` nếu biến này đã được tạo; nếu chưa có, dùng `ADMIN_API_KEY`. Không chia sẻ secret hoặc đưa lên GitHub.
+```mermaid
+flowchart LR
+    U[Đội thi / trình duyệt] --> WEB[Website + FastAPI trên Render]
+    A[Ban tổ chức /admin] --> WEB
+    WEB <--> DB[(Render PostgreSQL)]
+    DB -->|bài nộp và job trong hàng đợi| W[Worker Python trên máy có Docker Desktop]
+    W -->|biên dịch và chạy bot cô lập| S[Docker sandbox: Python / C++]
+    S --> W
+    W -->|trạng thái bài, kết quả, lịch sử| DB
+    DB -->|bảng xếp hạng / lịch sử| WEB
+```
 
-Render Free hiện chạy website/API và cơ sở dữ liệu, **chưa chạy worker**. Vì vậy, bản Render hiện tại nhận đăng ký và bài nộp nhưng chưa biên dịch bot, chưa ghép hai đội và chưa ghi kết quả trận. Trang admin có thể lưu lịch, nhưng mở lịch không tự làm trận chạy nếu thiếu worker. Không bật `MATCHES_ENABLED=true` trên Render để giả lập worker.
+Render chạy website/API và PostgreSQL. Worker hiện chạy trên máy của ban tổ chức bằng Docker Desktop; máy đó cần bật, có Internet và không ngủ trong lúc thi. Worker kết nối trực tiếp tới cùng PostgreSQL trên Render.
 
-Muốn demo hai bot chạy đầy đủ ngay, hãy chạy toàn bộ stack bằng Docker trên máy có Docker Desktop như hướng dẫn bên dưới. Muốn các trận trên website Render chạy online, cần triển khai một worker có Docker và kết nối cùng cơ sở dữ liệu; Render Free không có gói Background Worker miễn phí.
+### Worker thực tế so với sơ đồ module
 
-## Chạy worker trên máy cá nhân, dùng website Render
+Sơ đồ có Job Queue, Match Worker, Job Handler, Match Loader, Sandbox Manager, Match Runner, Game Engine và Result Collector mô tả đúng **các trách nhiệm về mặt khái niệm**. Trong phiên bản hiện tại, chúng chưa phải tám dịch vụ riêng: một tiến trình Python trong `app/worker.py` đọc bảng `jobs` ở PostgreSQL, biên dịch bài, tạo trận, kiểm tra luật, gọi sandbox và ghi kết quả vào cơ sở dữ liệu. Hàng đợi là bảng `jobs` trong PostgreSQL, **không phải Redis**. Sandbox Python/C++ là container Docker riêng cho mỗi bot; API và worker không chạy mã bot trực tiếp.
 
-Máy chạy worker có thể khác máy người chơi. Máy worker phải bật, có Internet và Docker Desktop đang chạy trong suốt thời gian thi. Worker cần quyền truy cập Docker socket để chạy bot trong sandbox; chỉ chạy trên máy của ban tổ chức.
+Luồng xử lý:
 
-1. Lấy **External Database URL** trong Render Dashboard → dịch vụ Postgres của cuộc thi → **Connect**. Không dùng Internal Database URL vì worker chạy ngoài Render.
-2. Trong thư mục `oantuti_server`, tạo file cấu hình riêng:
+1. Đội đăng ký/đăng nhập trên website và gửi mã nguồn bot. API lưu tài khoản, bài nộp và job biên dịch vào PostgreSQL.
+2. Worker lấy job chưa xử lý, biên dịch/kiểm tra bot trong sandbox. Artifact đã biên dịch được lưu trong volume Docker của worker.
+3. Khi lịch đang mở, worker ghép các bot đã biên dịch thành công, chạy từng lượt và kiểm tra nước đi theo luật OTTv2.
+4. Worker ghi trận, diễn biến, điểm và đội thắng vào PostgreSQL; website đọc dữ liệu đó để hiển thị lịch sử và bảng xếp hạng.
+
+Website hiển thị `Đang mở` khi cấu hình cho phép và nằm trong khung giờ. Điều đó **không tự chứng minh máy worker đang hoạt động**. Nếu worker tắt, job sẽ nằm chờ hoặc trận không chạy. Chỉ để `MATCHES_ENABLED=true` khi đã bật worker.
+
+## Cấu trúc mã nguồn
+
+```text
+oantuti_server/
+├── app/
+│   ├── main.py             # API đăng ký/đăng nhập, nộp bot, trận, bảng điểm, lịch admin
+│   ├── worker.py           # Hàng đợi, biên dịch, ghép trận, luật/game runner, ghi kết quả
+│   ├── models.py           # Bảng PostgreSQL: đội, bài nộp, job, trận, lịch
+│   ├── db.py               # Kết nối và session SQLAlchemy
+│   ├── event_schedule.py   # Trạng thái lịch theo giờ Việt Nam
+│   └── security.py         # Token đội và kiểm tra quyền
+├── web/
+│   ├── index.html          # Website cuộc thi
+│   ├── app.js, app.css     # Đăng nhập, nộp bot, lịch sử, bảng xếp hạng
+│   └── admin.html/js/css  # Trang admin đặt giờ và mở/đóng lịch
+├── sandbox/
+│   ├── Dockerfile          # Môi trường chạy bot cô lập
+│   └── entrypoint.py       # Biên dịch và khởi chạy Python/C++ trong sandbox
+├── examples/               # Bot ví dụ
+├── Dockerfile              # Image website/API
+├── Dockerfile.worker       # Image worker
+├── docker-compose.yml      # Chạy toàn bộ hệ thống local
+├── docker-compose.remote-worker.yml # Chỉ chạy worker nối tới Render
+├── render.yaml             # Blueprint website + PostgreSQL trên Render
+├── .env.example            # Mẫu cấu hình local
+└── .env.worker.example     # Mẫu cấu hình worker nối Render
+```
+
+## Đưa hai link lên GitHub
+
+Hai link ở đầu README sẽ hiện ngay trên trang repository. GitHub mục **About → Website** chỉ nhận một địa chỉ; đặt link website cuộc thi ở đó. Link trang admin vẫn để trong README như trên.
+
+Để đặt link website trong About: mở trang repository → khung **About** bên phải → bấm biểu tượng bánh răng → điền `https://oantuti-demo.onrender.com/` vào **Website** → **Save changes**. README cung cấp cả website và trang quản trị cho người xem.
+
+## Chạy website, API, PostgreSQL và worker trên máy cá nhân
+
+Đây là một bộ dữ liệu local riêng, không phải dữ liệu cuộc thi đang lưu trên Render.
+
+### Cần chuẩn bị
+
+- Git và Docker Desktop đã cài trên Windows.
+- Mở Docker Desktop, chờ Docker Engine báo đang chạy; dùng Linux containers.
+- Mở PowerShell tại thư mục chứa `docker-compose.yml`.
+
+### Cài và chạy
+
+```powershell
+git clone https://github.com/Ppt05/Laptrinhmang_G8.git
+cd Laptrinhmang_G8
+Copy-Item .env.example .env
+notepad .env
+docker compose up --build -d
+```
+
+Trong `.env`, thay `POSTGRES_PASSWORD`, `ADMIN_API_KEY` và `ADMIN_PASSWORD` bằng giá trị riêng, khó đoán; giữ `ADMIN_USERNAME=admin`. Đặt `MATCHES_ENABLED=true` nếu muốn worker local ghép trận. `.env` bị Git bỏ qua; không tải file này lên GitHub.
+
+Mở [http://localhost:8000/](http://localhost:8000/) để đăng ký hai đội và nộp bot. Vào [http://localhost:8000/admin](http://localhost:8000/admin) để đăng nhập bằng `ADMIN_USERNAME`/`ADMIN_PASSWORD` trong `.env` và đặt lịch. Với demo ngay, đặt `AUTO_MATCH_START=00:00` để worker không phải đợi tới một giờ muộn hơn trong ngày.
+
+```powershell
+docker compose ps
+docker compose logs -f api worker
+```
+
+`Ctrl+C` chỉ thoát xem log, không dừng dịch vụ. Dừng các container bằng `docker compose down`. Lệnh đó giữ dữ liệu trong volume; **không dùng `docker compose down -v` nếu muốn giữ database local**.
+
+## Chạy worker trên máy ban tổ chức để phục vụ website Render
+
+Đây là cấu hình đang dùng cho cuộc thi online: website và database ở Render, worker trên máy có Docker Desktop. Người chơi vẫn vào link Render; không cần truy cập máy worker.
+
+1. Lấy **External Database URL** trong Render Dashboard → PostgreSQL của dự án → **Connect**. Dùng URL External (máy cá nhân không truy cập được địa chỉ Internal).
+2. Tạo file riêng từ mẫu và sửa `DATABASE_URL` trong file đó:
 
    ```powershell
    Copy-Item .env.worker.example .env.worker
    notepad .env.worker
    ```
 
-   Thay giá trị `DATABASE_URL` bằng External Database URL. Giữ `MATCHES_ENABLED=true`; đặt `AUTO_MATCH_START=00:00` để worker có thể ghép bot ngay trong ngày sau khi lịch thi được mở. Không gửi hoặc commit `.env.worker`.
+   Giữ các biến còn lại trong mẫu. Không gửi URL này vào chat công khai, không đưa vào README, không commit `.env.worker`. Nếu bạn cùng tổ chức cần chạy worker, gửi URL qua kênh bí mật đáng tin cậy.
 
-3. Mở Docker Desktop, rồi chạy worker:
+3. Mở Docker Desktop và chờ Engine chạy, sau đó bật worker:
 
    ```powershell
    docker compose -f docker-compose.remote-worker.yml up --build -d
+   docker compose -f docker-compose.remote-worker.yml ps
    docker compose -f docker-compose.remote-worker.yml logs -f worker
    ```
 
-   Giữ Docker Desktop và cửa sổ worker hoạt động. Dùng `Ctrl+C` để thoát xem log; worker vẫn chạy nền. Dừng worker bằng `docker compose -f docker-compose.remote-worker.yml down`.
-
-4. Sau khi log cho thấy worker đã kết nối và đang chờ việc, vào Render → Web Service `oantuti-demo` → **Environment**, đổi `MATCHES_ENABLED` thành `true` rồi lưu để trang web nhận trạng thái worker đã sẵn sàng. Chờ dịch vụ web khởi động lại.
-5. Đăng nhập `/admin`, đặt giờ bắt đầu/kết thúc bao quanh thời điểm hiện tại và bật lịch. Hai đội cần có bài nộp ở trạng thái sẵn sàng. Worker sẽ biên dịch bài còn trong hàng đợi, rồi ghép các bot sẵn sàng theo lịch hằng ngày; với đúng hai đội, trận ghép sẽ là hai đội đó. Xem log worker và trang lịch sử/bảng xếp hạng để xác nhận kết quả.
-
-Nếu người chơi đã đăng ký trên Render, worker phải dùng đúng External Database URL của cơ sở dữ liệu Render đó. Không chạy `docker compose up` cục bộ song song để chờ các bài nộp trên website; cấu hình Compose mặc định tạo một database local riêng.
-
-## Chạy đầy đủ trên máy cá nhân
-
-Yêu cầu: Docker Desktop đang mở.
-
-1. Tạo file `.env` từ `.env.example`:
+   Worker dùng quyền điều khiển Docker để tạo sandbox, nên chỉ chạy trên máy tin cậy của ban tổ chức. Để xem log ở nền, nhấn `Ctrl+C`; worker vẫn chạy. Dừng nó bằng:
 
    ```powershell
-   Copy-Item .env.example .env
+   docker compose -f docker-compose.remote-worker.yml down
    ```
 
-2. Trong `.env`, đặt `POSTGRES_PASSWORD`, `ADMIN_API_KEY` và `ADMIN_PASSWORD` thành giá trị riêng; giữ `ADMIN_USERNAME=admin`. Đổi `MATCHES_ENABLED=false` thành `MATCHES_ENABLED=true`. Để worker tự ghép khi lịch được mở, đặt `AUTO_MATCH_START` thành một giờ đã qua trong ngày, ví dụ `00:00`.
-3. Chạy các dịch vụ:
+4. Trong Render → Web Service `oantuti-demo` → **Environment**, bật `MATCHES_ENABLED=true` khi worker đang chạy. Trang `/admin` cho phép đặt thời gian; worker ghép bot sẵn sàng theo lịch. Kiểm tra trạng thái container và log worker trước khi thông báo bắt đầu thi.
+5. Giữ máy tính bật, kết nối Internet và ngăn Windows Sleep trong toàn bộ khung giờ. Nếu máy tắt hoặc Docker Desktop dừng, worker ngừng lấy job; bật lại Docker Desktop và kiểm tra log sau khi khởi động.
 
-   ```powershell
-   docker compose up --build -d
-   ```
+### Nếu chuyển worker sang máy bạn cùng nhóm
 
-4. Mở <http://localhost:8000>, đăng ký hai đội và nộp mã bot cho mỗi đội.
-5. Chờ cả hai bài có trạng thái sẵn sàng. Mở <http://localhost:8000/admin>, đăng nhập bằng `ADMIN_USERNAME` và `ADMIN_PASSWORD` trong `.env`, đặt thời điểm bắt đầu/kết thúc sao cho hiện tại nằm trong khung giờ đó, rồi lưu lịch. Worker ghép các bot sẵn sàng một lần mỗi ngày từ mốc `AUTO_MATCH_START`.
+Trên máy mới, cài Git/Docker Desktop, clone repository, tạo `.env.worker` từ `.env.worker.example`, rồi lấy **External Database URL của chính database Render này** và nhập vào file. Sau đó chạy các lệnh Compose ở trên. Không dùng `.env` local của máy mới nếu mục tiêu là xử lý bài thi trên Render; `.env` đó trỏ tới database local khác.
 
-Xem log bằng `docker compose logs -f api worker`; dừng bằng `docker compose down`.
+**Hiện tại chỉ nên có một worker hoạt động tại một thời điểm. Không bật worker trên hai máy khác nhau cùng lúc.** PostgreSQL khóa job để tránh hai worker cùng lấy một job, nhưng mỗi máy có volume artifact riêng: máy A có thể biên dịch bot, còn máy B lấy job trận và không tìm thấy file đã biên dịch. Phần ghép cặp hằng ngày cũng chưa có khóa phân tán đầy đủ. Vì vậy chạy đồng thời trên hai máy có thể làm trận lỗi hoặc ghép trùng. Muốn đổi máy, dừng worker cũ trước; việc chuyển tiếp kết quả đang chờ giữa hai máy chưa được tự động hỗ trợ.
 
-**An toàn:** Worker cần quyền điều khiển Docker để chạy mã dự thi trong sandbox. Chỉ chạy trên máy tin cậy; không chia sẻ quyền quản trị máy hoặc Docker socket cho thí sinh.
+Để hỗ trợ nhiều máy worker an toàn trong tương lai, cần chuyển artifact sang kho dùng chung (hoặc lưu trong database), bổ sung khóa phân tán cho việc ghép lịch và cơ chế khôi phục job bị gián đoạn.
+
+## Tài khoản admin và bí mật
+
+- Tên đăng nhập Render mặc định là `admin` nếu `ADMIN_USERNAME` chưa bị đổi.
+- Mật khẩu admin được cấu hình trong Render Dashboard → Web Service → **Environment** (`ADMIN_PASSWORD`). Nếu không biết mật khẩu hiện tại, hãy đặt mật khẩu mới tại đó và lưu/deploy lại; không chép mật khẩu vào README.
+- Chạy local thì mật khẩu nằm trong `.env` trên máy local. Người chạy worker **không cần** tài khoản admin; họ chỉ cần cấu hình kết nối database trong `.env.worker`.
+- Mã nguồn GitHub không chứa `.env`, `.env.worker`, mật khẩu, token đội hoặc khóa quản trị. Nếu từng lỡ commit secret, xóa khỏi lịch sử không đủ; hãy đổi secret ngay trên dịch vụ tương ứng.
 
 ## Cách bot nhận lượt và trả nước đi
 
-Ở mỗi lượt, bot đọc một dòng JSON từ `stdin`. Trong dữ liệu có trạng thái bàn cờ và danh sách `legal_moves`. Bot chọn một nước hợp lệ và in một dòng JSON ra `stdout`:
+Ở mỗi lượt, bot đọc một dòng JSON từ `stdin`. Dữ liệu gồm trạng thái bàn cờ và danh sách `legal_moves`. Bot phải chọn một nước trong danh sách và in đúng một dòng JSON ra `stdout`, ví dụ:
 
 ```json
 {"piece_id":"S01","to":"a4"}
 ```
 
-Chỉ chọn cặp `piece_id` và `to` có trong `legal_moves`. Không in lời giải thích vào `stdout`. Mỗi lượt có tối đa 1,5 giây; đầu ra sai hoặc quá giờ khiến bot thua trận. Website có nút **Chèn bot mẫu** để bắt đầu.
+Chỉ chọn cặp `piece_id` và `to` có trong `legal_moves`. Không in lời giải thích hoặc log vào `stdout`; nếu cần gỡ lỗi, dùng `stderr`. Mỗi lượt có tối đa 1,5 giây. Nước đi sai định dạng, không hợp lệ hoặc quá giờ bị tính là thua theo luật. Xem bot mẫu trong `examples/` và hướng dẫn trên website trước khi nộp.
 
 ## Luật OTTv2
 
-- Mỗi bên có 10 quân trên bàn 9×9; Xanh đi trước. Mỗi lượt di chuyển một ô theo một trong tám hướng.
-- Đấm thắng Kéo, Kéo thắng Lá, Lá thắng Đấm. Quân chỉ ăn được quân đối thủ mà mình khắc chế.
+- Mỗi bên có 10 quân trên bàn 9×9; Xanh đi trước. Mỗi lượt di chuyển đúng một ô theo một trong tám hướng.
+- Đấm thắng Kéo, Kéo thắng Lá, Lá thắng Đấm. Quân chỉ ăn quân đối thủ mà mình khắc chế; quân cùng loại hoặc không khắc chế chặn ô.
 - Thắng khi ăn hết một loại quân đối thủ hoặc đưa quân tới đích: Bắc tới `a1`, Nam tới `i9`.
-- Hòa nếu lặp lại một thế cờ ba lần, không còn nước hợp lệ, hoặc đủ 200 nước đi.
-- Điểm bảng xếp hạng: thắng 1, hòa 0,5, thua 0.
+- Hòa nếu lặp lại cùng thế cờ ba lần, không còn nước hợp lệ, hoặc đủ 200 nước đi mà chưa có bên thắng.
+- Bảng xếp hạng tính thắng 1 điểm, hòa 0,5 điểm, thua 0 điểm.
 
-## Cấu trúc thư mục
+## Cập nhật mã trên GitHub
 
-- `app/`: API, dữ liệu đội/bài/trận và worker.
-- `web/`: website, khu vực nộp bài và trang quản trị.
-- `sandbox/`: Docker image để biên dịch/chạy bot.
-- `docker-compose.yml`: chạy API, PostgreSQL, worker và sandbox trên máy cá nhân.
-- `render.yaml`: cấu hình website demo trên Render; không tạo worker.
+Sau khi sửa README hoặc mã trong thư mục dự án:
 
-Không commit `.env`, mật khẩu, token đội hoặc khóa quản trị lên GitHub.
+```powershell
+git status
+git add README.md app/worker.py sandbox/entrypoint.py
+git commit -m "Document setup and fix worker sandbox input"
+git push origin main
+```
+
+Trên máy người cùng nhóm, tải phiên bản mới trước khi dựng worker:
+
+```powershell
+git pull --ff-only origin main
+docker compose -f docker-compose.remote-worker.yml up --build -d
+```
+
+Không đưa `.env` hoặc `.env.worker` vào lệnh `git add`. Render có thể cần **Manual Deploy** riêng tùy cấu hình Auto Deploy; thay đổi worker chạy local không tự triển khai worker lên Render.

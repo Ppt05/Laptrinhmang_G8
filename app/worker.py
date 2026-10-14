@@ -1,4 +1,4 @@
-import base64, json, os, selectors, subprocess, tempfile, time
+import base64, json, os, selectors, struct, subprocess, tempfile, time
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -101,18 +101,18 @@ def compile_submission(db: Session, s: Submission):
 
 def start_bot(s):
     artifact = ARTIFACTS / s.artifact
-    create = sandbox_args()
-    create[1] = "create"  # The selected file is copied into a private container before it starts.
-    create.remove("--rm")
-    create.remove("-i")
-    create += ["-i", "-e", "PYTHONUNBUFFERED=1", IMAGE, "run", s.language]
-    container_id = subprocess.check_output(create, text=True, timeout=15).strip()
+    data = artifact.read_bytes()
+    proc = docker_cmd("run", s.language)
     try:
-        subprocess.run(["docker", "cp", str(artifact), f"{container_id}:/tmp/bot/program"], check=True, timeout=15, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-        proc = subprocess.Popen(["docker", "start", "-ai", container_id], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
-        return proc, container_id
+        # Send the compiled artifact through stdin before the bot protocol starts.
+        # This works with Docker's read-only rootfs, where `docker cp` is rejected.
+        proc.stdin.write(struct.pack(">I", len(data)))
+        proc.stdin.write(data)
+        proc.stdin.flush()
+        return proc, None
     except Exception:
-        subprocess.run(["docker", "rm", "-f", container_id], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        proc.kill()
+        proc.wait(timeout=2)
         raise
 
 def read_line_timeout(stream, timeout):
@@ -173,7 +173,8 @@ def play_match(db: Session, m: Match):
         for p, cid in ((pa, ca), (pb, cb)):
             try: p.kill(); p.wait(timeout=2)
             except Exception: pass
-            subprocess.run(["docker", "rm", "-f", cid], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if cid:
+                subprocess.run(["docker", "rm", "-f", cid], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def claim(db):
     job = db.scalar(select(Job).where(Job.status == "queued").order_by(Job.id).with_for_update(skip_locked=True).limit(1))
