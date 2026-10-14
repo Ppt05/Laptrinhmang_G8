@@ -47,7 +47,10 @@ function paintSession() {
   $("#dashboard").classList.toggle("hidden", !signed);
   $("#dashboardHint").classList.toggle("hidden", signed);
   $("#teamName").textContent = sessionStorage.getItem(teamKey) || "Đội dự thi";
-  $("#navAccount").textContent = signed ? "Tài khoản đội" : "Đăng nhập";
+  $("#navLogin").classList.toggle("hidden", signed);
+  $("#navRegister").classList.toggle("hidden", signed);
+  $("#navAccount").classList.toggle("hidden", !signed);
+  $("#dialogTitle").textContent = signed ? "Tài khoản đội" : "Đăng nhập";
 }
 
 function showToast(text, error = false) {
@@ -64,9 +67,19 @@ function activateTab(name) {
   $("#registerForm").classList.toggle("hidden", name !== "register");
 }
 
-$("#navAccount").addEventListener("click", () => {
-  if (token()) $("#thi-dau").scrollIntoView({ behavior: "smooth" });
-  else { activateTab("login"); $("#thi-dau").scrollIntoView({ behavior: "smooth" }); }
+function openAccount(mode = "login") {
+  activateTab(mode);
+  const dialog = $("#accountDialog");
+  if (!dialog.open) dialog.showModal();
+}
+
+$("#navLogin").addEventListener("click", () => openAccount("login"));
+$("#navRegister").addEventListener("click", () => openAccount("register"));
+$("#navAccount").addEventListener("click", () => openAccount("login"));
+$("#submitLoginLink").addEventListener("click", () => openAccount("login"));
+$("#closeDialog").addEventListener("click", () => $("#accountDialog").close());
+$("#accountDialog").addEventListener("click", (event) => {
+  if (event.target === event.currentTarget) event.currentTarget.close();
 });
 
 $$(".tab").forEach((tab) => tab.addEventListener("click", () => activateTab(tab.dataset.tab)));
@@ -78,6 +91,7 @@ $("#registerForm").addEventListener("submit", async (event) => {
   try {
     const result = await request("/api/register", { method: "POST", body: JSON.stringify(data) });
     setSession(result);
+    $("#accountDialog").close();
     form.reset();
     showToast(`Đã tạo tài khoản đội ${result.name}.`);
   } catch (error) { message(form, error.message, true); }
@@ -89,19 +103,9 @@ $("#loginForm").addEventListener("submit", async (event) => {
   try {
     const result = await request("/api/login", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form))) });
     setSession(result);
+    $("#accountDialog").close();
     form.reset();
     showToast(`Xin chào ${result.name}!`);
-  } catch (error) { message(form, error.message, true); }
-});
-
-$("#claimForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const form = event.currentTarget;
-  try {
-    const result = await request("/api/account/claim", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form))) });
-    setSession(result);
-    form.reset();
-    showToast(`Đã tạo thông tin đăng nhập cho đội ${result.name}.`);
   } catch (error) { message(form, error.message, true); }
 });
 
@@ -109,6 +113,7 @@ $("#logoutBtn").addEventListener("click", () => {
   sessionStorage.removeItem(tokenKey);
   sessionStorage.removeItem(teamKey);
   paintSession();
+  $("#accountDialog").close();
   showToast("Bạn đã đăng xuất.");
 });
 
@@ -120,7 +125,7 @@ $("#sampleBtn").addEventListener("click", () => {
 $("#submitForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
-  if (!token()) { activateTab("login"); $("#thi-dau").scrollIntoView({ behavior: "smooth" }); showToast("Đăng nhập đội trước khi nộp bài.", true); return; }
+  if (!token()) { openAccount("login"); showToast("Đăng nhập đội trước khi nộp bài.", true); return; }
   const data = Object.fromEntries(new FormData(form));
   try {
     const result = await request("/api/submissions", { method: "POST", body: JSON.stringify(data) });

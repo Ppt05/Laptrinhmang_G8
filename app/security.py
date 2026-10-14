@@ -40,9 +40,6 @@ def authorized_player(credentials: HTTPAuthorizationCredentials | None = Depends
 
 def new_token(): return secrets.token_urlsafe(32)
 
-def check_registration(code):
-    expected = os.getenv("REGISTRATION_CODE", "")
-    if expected and not hmac.compare_digest(code or "", expected):
-        raise HTTPException(403, "Mã đăng ký không hợp lệ")
+def check_registration():
     if os.getenv("REGISTRATION_OPEN", "true").lower() != "true":
         raise HTTPException(403, "Đăng ký đang đóng")

@@ -11,7 +11,8 @@ from .db import Base, SessionLocal, engine
 from .models import Job, Match, Player, Submission
 from .security import authorized_player, check_registration, digest, hash_password, new_token, verify_password
 
-app = FastAPI(title="OanTuTi Bot League", version="0.2.0", description="OTTv2: game chiến thuật bàn cờ 9×9")
+app = FastAPI(title="OanTuTi Bot League", version="0.2.0", description="OTTv2: game chiến thuật bàn cờ 9×9",
+              docs_url=None, redoc_url=None, openapi_url=None)
 VN = ZoneInfo(os.getenv("EVENT_TIMEZONE", "Asia/Ho_Chi_Minh"))
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 app.mount("/assets", StaticFiles(directory=WEB_DIR), name="assets")
@@ -22,7 +23,7 @@ def startup():
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE players ADD COLUMN IF NOT EXISTS password_hash VARCHAR(128)"))
 
-class Register(BaseModel): name: str = Field(min_length=2, max_length=60); password: str = Field(min_length=8, max_length=128); registration_code: str = ""
+class Register(BaseModel): name: str = Field(min_length=2, max_length=60); password: str = Field(min_length=8, max_length=128)
 class Login(BaseModel): name: str = Field(min_length=2, max_length=60); password: str = Field(min_length=1, max_length=128)
 class ClaimAccount(BaseModel): name: str = Field(min_length=2, max_length=60); registration_token: str; password: str = Field(min_length=8, max_length=128)
 class Submit(BaseModel): language: str; source: str = Field(min_length=1)
@@ -45,7 +46,7 @@ def health(): return {"ok": True}
 
 @app.post("/api/register")
 def register(body: Register):
-    check_registration(body.registration_code)
+    check_registration()
     if not re.fullmatch(r"[\w .-]{2,60}", body.name.strip(), flags=re.UNICODE): raise HTTPException(400, "Tên đội có ký tự không hợp lệ")
     token = new_token()
     with SessionLocal() as db:
