@@ -1,5 +1,5 @@
 import base64, hashlib, hmac, json, os, re, secrets, time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse
@@ -7,10 +7,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, text
 from pathlib import Path
-from .db import Base, SessionLocal, engine
-from .models import EventControl, Job, Match, Player, Submission
+from .db import SessionLocal
+from .models import EventControl, Job, Match, Player, Submission, WorkerNode
 from .event_schedule import as_vietnam_time, get_event_state
 from .security import authorized_player, check_registration, digest, hash_password, new_token, verify_password
+from .schema import ensure_schema
 
 app = FastAPI(title="OanTuTi Bot League", version="0.2.0", description="OTTv2: game chiến thuật bàn cờ 9×9",
               docs_url=None, redoc_url=None, openapi_url=None)
@@ -20,9 +21,7 @@ app.mount("/assets", StaticFiles(directory=WEB_DIR), name="assets")
 
 @app.on_event("startup")
 def startup():
-    Base.metadata.create_all(engine)
-    with engine.begin() as conn:
-        conn.execute(text("ALTER TABLE players ADD COLUMN IF NOT EXISTS password_hash VARCHAR(128)"))
+    ensure_schema()
 
 class Register(BaseModel): name: str = Field(min_length=2, max_length=60); password: str = Field(min_length=8, max_length=128)
 class Login(BaseModel): name: str = Field(min_length=2, max_length=60); password: str = Field(min_length=1, max_length=128)
@@ -31,6 +30,10 @@ class Submit(BaseModel): language: str; source: str = Field(min_length=1)
 class Challenge(BaseModel): opponent_id: int
 class EventScheduleInput(BaseModel): start_at: datetime; end_at: datetime; enabled: bool
 class AdminLogin(BaseModel): username: str = Field(min_length=1, max_length=80); password: str = Field(min_length=1, max_length=256)
+class AssignedMatch(BaseModel):
+    player_a_id: int
+    player_b_id: int
+    worker_id: str = Field(min_length=1, max_length=64)
 
 def matches_engine_enabled():
     return os.getenv("MATCHES_ENABLED", "false").lower() == "true"
@@ -61,6 +64,9 @@ def require_admin(key=None, authorization=None):
 
 def latest_ready(db, player_id):
     return db.scalar(select(Submission).where(Submission.player_id == player_id, Submission.status == "ready").order_by(Submission.id.desc()))
+
+def worker_online(node):
+    return bool(node and node.last_seen and node.last_seen >= datetime.now(timezone.utc) - timedelta(seconds=30))
 
 @app.get("/")
 def home():
@@ -102,6 +108,67 @@ def admin_set_event(body: EventScheduleInput, x_admin_key: str | None = Header(d
         control = db.get(EventControl, 1)
         return {"start_at": control.start_at, "end_at": control.end_at,
                 "enabled": control.enabled, "event": get_event_state(db, matches_engine_enabled())}
+
+@app.get("/api/admin/teams")
+def admin_teams(x_admin_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
+    require_admin(x_admin_key, authorization)
+    with SessionLocal() as db:
+        return [{"id": p.id, "name": p.name, "submission_id": s.id if s else None,
+                 "language": s.language if s else None}
+                for p in db.scalars(select(Player).order_by(Player.id)).all()
+                for s in [latest_ready(db, p.id)]]
+
+@app.get("/api/admin/workers")
+def admin_workers(x_admin_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
+    require_admin(x_admin_key, authorization)
+    with SessionLocal() as db:
+        return [{"id": node.id, "online": worker_online(node), "last_seen": node.last_seen.isoformat()}
+                for node in db.scalars(select(WorkerNode).order_by(WorkerNode.id)).all()]
+
+@app.get("/api/admin/matches")
+def admin_matches(x_admin_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
+    require_admin(x_admin_key, authorization)
+    with SessionLocal() as db:
+        matches = db.scalars(select(Match).order_by(Match.id.desc()).limit(50)).all()
+        names = {p.id: p.name for p in db.scalars(select(Player)).all()}
+        return [{"id": m.id, "team_a": names.get(m.player_a, str(m.player_a)),
+                 "team_b": names.get(m.player_b, str(m.player_b)), "worker_id": m.worker_id,
+                 "status": m.status, "kind": m.kind, "event_day": m.event_day,
+                 "winner": names.get(m.winner_id) if m.winner_id else None}
+                for m in matches]
+
+@app.post("/api/admin/matches")
+def admin_assign_match(body: AssignedMatch, x_admin_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
+    require_admin(x_admin_key, authorization)
+    worker_id = body.worker_id.strip()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", worker_id):
+        raise HTTPException(400, "Mã máy chỉ dùng chữ thường, số, dấu - hoặc _")
+    if body.player_a_id == body.player_b_id:
+        raise HTTPException(400, "Hãy chọn hai đội khác nhau")
+    team_ids = sorted((body.player_a_id, body.player_b_id))
+    with SessionLocal.begin() as db:
+        if not get_event_state(db, matches_engine_enabled())["matches_enabled"]:
+            raise HTTPException(409, "Lịch thi đấu chưa mở")
+        if not worker_online(db.get(WorkerNode, worker_id)):
+            raise HTTPException(409, "Máy worker này chưa trực tuyến")
+        teams = db.scalars(select(Player).where(Player.id.in_(team_ids)).order_by(Player.id).with_for_update()).all()
+        if len(teams) != 2:
+            raise HTTPException(404, "Không tìm thấy đủ hai đội")
+        submissions = {team_id: latest_ready(db, team_id) for team_id in team_ids}
+        if not all(submissions.values()):
+            raise HTTPException(409, "Cả hai đội cần có bot đã biên dịch thành công")
+        active = db.scalar(select(Match.id).where(Match.status.in_(["queued", "running"]),
+                            (Match.player_a.in_(team_ids)) | (Match.player_b.in_(team_ids))).limit(1))
+        if active:
+            raise HTTPException(409, "Một trong hai đội đang có trận chờ hoặc đang chạy")
+        m = Match(player_a=body.player_a_id, player_b=body.player_b_id,
+                  submission_a=submissions[body.player_a_id].id, submission_b=submissions[body.player_b_id].id,
+                  event_day=datetime.now(VN).date().isoformat(), kind="assigned", worker_id=worker_id)
+        db.add(m)
+        db.flush()
+        db.add(Job(kind="match", payload=json.dumps({"match_id": m.id}), worker_id=worker_id))
+        match_id = m.id
+    return {"match_id": match_id, "worker_id": worker_id, "status": "queued"}
 
 @app.get("/health")
 def health(): return {"ok": True}
@@ -194,15 +261,16 @@ def challenge(body: Challenge, player_id: int = Depends(authorized_player)):
             raise HTTPException(503, "Đã đến lịch thi đấu nhưng máy chủ chạy bot chưa được cấu hình")
         raise HTTPException(400, "Hiện không nằm trong khung giờ thi đấu")
     if body.opponent_id == player_id: raise HTTPException(400, "Không thể thách đấu chính mình")
-    with SessionLocal() as db:
+    with SessionLocal.begin() as db:
+        participants = sorted((player_id, body.opponent_id))
+        db.scalars(select(Player).where(Player.id.in_(participants)).order_by(Player.id).with_for_update()).all()
         a, b = latest_ready(db, player_id), latest_ready(db, body.opponent_id)
         if not a or not b: raise HTTPException(409, "Cả hai đội cần có bot đã biên dịch thành công")
-        participants = [player_id, body.opponent_id]
         active = db.scalar(select(Match.id).where(Match.status.in_(["queued", "running"]), (Match.player_a.in_(participants)) | (Match.player_b.in_(participants))))
         if active: raise HTTPException(409, "Bạn đã có một trận đang chờ hoặc đang chạy")
         today = datetime.now(VN).date().isoformat()
         m = Match(player_a=player_id, player_b=body.opponent_id, submission_a=a.id, submission_b=b.id, event_day=today, kind="challenge")
-        db.add(m); db.flush(); db.add(Job(kind="match", payload=json.dumps({"match_id": m.id}))); db.commit()
+        db.add(m); db.flush(); db.add(Job(kind="match", payload=json.dumps({"match_id": m.id})))
         return {"match_id": m.id, "status": "queued"}
 
 @app.get("/api/matches/{match_id}")
@@ -210,7 +278,7 @@ def get_match(match_id: int):
     with SessionLocal() as db:
         m = db.get(Match, match_id)
         if not m: raise HTTPException(404, "Không tìm thấy trận")
-        return {"id": m.id, "player_a": m.player_a, "player_b": m.player_b, "kind": m.kind, "status": m.status, "winner_id": m.winner_id, "points_a": m.points_a, "points_b": m.points_b, "detail": json.loads(m.detail) if m.detail else None}
+        return {"id": m.id, "player_a": m.player_a, "player_b": m.player_b, "kind": m.kind, "status": m.status, "worker_id": m.worker_id, "winner_id": m.winner_id, "points_a": m.points_a, "points_b": m.points_b, "detail": json.loads(m.detail) if m.detail else None}
 
 @app.get("/api/leaderboard")
 def leaderboard():
@@ -233,7 +301,8 @@ def pair_daily(x_admin_key: str | None = Header(default=None), authorization: st
         raise HTTPException(503, "Chưa thể ghép trận: cần lịch đang mở và worker chạy bot")
     now = datetime.now(VN)
     day = now.date().isoformat()
-    with SessionLocal() as db:
+    with SessionLocal.begin() as db:
+        db.execute(text("SELECT pg_advisory_xact_lock(74620146)"))
         if db.scalar(select(Match.id).where(Match.event_day == day, Match.kind == "daily")): return {"created": 0, "reason": "daily pairing already started"}
         players = db.scalars(select(Player).order_by(Player.id)).all()
         eligible = [(p, latest_ready(db, p.id)) for p in players]
@@ -243,4 +312,4 @@ def pair_daily(x_admin_key: str | None = Header(default=None), authorization: st
         for (a, sa), (b, sb) in pairs:
             m = Match(player_a=a.id, player_b=b.id, submission_a=sa.id, submission_b=sb.id, event_day=day, kind="daily")
             db.add(m); db.flush(); db.add(Job(kind="match", payload=json.dumps({"match_id": m.id}))); created += 1
-        db.commit(); return {"created": created, "unpaired": len(eligible) % 2, "day": day}
+        return {"created": created, "unpaired": len(eligible) % 2, "day": day}

@@ -1,15 +1,17 @@
-import base64, json, os, selectors, struct, subprocess, tempfile, time
-from datetime import datetime
+import base64, json, os, re, secrets, selectors, struct, subprocess, tempfile, threading, time
+from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
-from sqlalchemy import select
+from sqlalchemy import or_, select, text
 from sqlalchemy.orm import Session
-from .db import Base, SessionLocal, engine
-from .models import Job, Match, Submission
+from .db import SessionLocal
+from .models import Job, Match, Submission, WorkerNode
 from .event_schedule import get_event_state
+from .schema import ensure_schema
 
 DATA = Path(os.getenv("APP_DATA", "/app/data")); ARTIFACTS = DATA / "artifacts"
 IMAGE = os.getenv("SANDBOX_IMAGE", "oantuti-sandbox:dev")
+WORKER_ID = os.getenv("WORKER_ID", "may-1")
 # OTTv2 tactical board game: coordinates use a1=(0,0), i9=(8,8).
 BEATS = {"rock": "scissors", "scissors": "paper", "paper": "rock"}
 FILES = "abcdefghi"
@@ -99,6 +101,15 @@ def compile_submission(db: Session, s: Submission):
         target = ARTIFACTS / f"submission-{s.id}.bin"; target.write_bytes(data)
         s.artifact = target.name; s.status = "ready"; s.compile_error = None
 
+def ensure_local_artifact(db: Session, s: Submission):
+    # Artifacts live in each computer's Docker volume. A match assigned to a
+    # second computer can rebuild its own copy from the source stored in DB.
+    if s.status != "ready":
+        return False
+    if not s.artifact or not (ARTIFACTS / s.artifact).is_file():
+        compile_submission(db, s)
+    return s.status == "ready"
+
 def start_bot(s):
     artifact = ARTIFACTS / s.artifact
     data = artifact.read_bytes()
@@ -124,7 +135,7 @@ def read_line_timeout(stream, timeout):
 
 def play_match(db: Session, m: Match):
     a, b = db.get(Submission, m.submission_a), db.get(Submission, m.submission_b)
-    if not a or not b or a.status != "ready" or b.status != "ready":
+    if not a or not b or not ensure_local_artifact(db, a) or not ensure_local_artifact(db, b):
         m.status = "failed"; m.detail = json.dumps({"error": "Bot chưa sẵn sàng"}); return
     (pa, ca), (pb, cb) = start_bot(a), start_bot(b)
     game = new_game(); turns = []; side_a, side_b = "south", "north"
@@ -177,7 +188,8 @@ def play_match(db: Session, m: Match):
                 subprocess.run(["docker", "rm", "-f", cid], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def claim(db):
-    job = db.scalar(select(Job).where(Job.status == "queued").order_by(Job.id).with_for_update(skip_locked=True).limit(1))
+    job = db.scalar(select(Job).where(Job.status == "queued", or_(Job.worker_id.is_(None), Job.worker_id == WORKER_ID))
+                    .order_by(Job.id).with_for_update(skip_locked=True).limit(1))
     if job: job.status = "running"; job.attempts += 1; db.flush(); return job
 
 def process(job_id):
@@ -199,17 +211,47 @@ def process(job_id):
                 s = db.get(Submission, json.loads(job.payload).get("submission_id"));
                 if s: s.status = "failed"; s.compile_error = str(exc)[:6000]
 
+def register_worker(instance_token):
+    now = datetime.now(timezone.utc)
+    with SessionLocal.begin() as db:
+        node = db.get(WorkerNode, WORKER_ID, with_for_update=True)
+        if node and node.instance_token != instance_token and (now - node.last_seen).total_seconds() < 30:
+            raise RuntimeError(f"WORKER_ID '{WORKER_ID}' is already active; choose a unique ID for this computer")
+        if node:
+            node.instance_token, node.last_seen = instance_token, now
+        else:
+            db.add(WorkerNode(id=WORKER_ID, instance_token=instance_token, last_seen=now))
+
+def heartbeat_loop(instance_token, stop_event):
+    while not stop_event.wait(5):
+        try:
+            with SessionLocal.begin() as db:
+                node = db.get(WorkerNode, WORKER_ID, with_for_update=True)
+                if not node or node.instance_token != instance_token:
+                    stop_event.set()
+                    return
+                node.last_seen = datetime.now(timezone.utc)
+        except Exception:
+            # The main loop will also reconnect or restart if DB is unavailable.
+            pass
+
 def main():
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", WORKER_ID):
+        raise ValueError("WORKER_ID must contain only lowercase letters, digits, '-' or '_'")
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
-    Base.metadata.create_all(engine)
+    ensure_schema()
+    instance_token = secrets.token_hex(16)
+    register_worker(instance_token)
+    stop_event = threading.Event()
+    threading.Thread(target=heartbeat_loop, args=(instance_token, stop_event), daemon=True).start()
     tz = ZoneInfo(os.getenv("EVENT_TIMEZONE", "Asia/Ho_Chi_Minh"))
     last_pair_day = None
-    while True:
+    while not stop_event.is_set():
         now = datetime.now(tz)
         start = datetime.strptime(os.getenv("AUTO_MATCH_START", "19:00"), "%H:%M").time()
         with SessionLocal() as db:
             event_open = get_event_state(db, os.getenv("MATCHES_ENABLED", "false").lower() == "true", now)["matches_enabled"]
-        if event_open and now.time() >= start and last_pair_day != now.date().isoformat():
+        if os.getenv("AUTO_PAIR_ENABLED", "false").lower() == "true" and event_open and now.time() >= start and last_pair_day != now.date().isoformat():
             try:
                 create_daily_pairings(now.date().isoformat())
                 last_pair_day = now.date().isoformat()
@@ -224,6 +266,7 @@ def main():
 def create_daily_pairings(day):
     import random
     with SessionLocal.begin() as db:
+        db.execute(text("SELECT pg_advisory_xact_lock(74620146)"))
         if db.scalar(select(Match.id).where(Match.event_day == day, Match.kind == "daily")):
             return
         players = db.execute(select(Submission.player_id, Submission.id).where(Submission.status == "ready").order_by(Submission.id.desc())).all()

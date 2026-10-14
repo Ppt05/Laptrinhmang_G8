@@ -1,23 +1,7 @@
-# Đưa website Oẳn Tù Tì lên Render (bản demo miễn phí)
+# Chạy website trên Render và worker trên máy ban tổ chức
 
-Blueprint `render.yaml` tạo một Web Service chạy website + API và một Render Postgres miễn phí. Repo cần có thư mục này làm thư mục gốc (chứa `render.yaml` và `Dockerfile`).
+Xem [README.md](README.md) để cài dự án, đặt `WORKER_ID` cho từng máy và phân công trận trên trang admin.
 
-## Các bước
+`render.yaml` tạo website/API và PostgreSQL. Worker chạy bằng `docker-compose.remote-worker.yml` trên máy của ban tổ chức có Docker Desktop. Các worker cùng kết nối tới **External Database URL** của PostgreSQL trên Render; mỗi máy có một `WORKER_ID` khác nhau trong `.env.worker`.
 
-1. Tạo một repository GitHub mới, chép nội dung trong `oantuti_server` vào thư mục gốc repo rồi push. Không đưa `.env` lên GitHub; `.gitignore` đã loại trừ file này.
-2. Đăng nhập Render, chọn **New → Blueprint**, kết nối repository vừa push và chọn `render.yaml`.
-3. Khi Render yêu cầu `REGISTRATION_CODE`, tự đặt một mã rồi chỉ gửi mã đó cho thí sinh. `ADMIN_API_KEY` được Render tự tạo.
-4. Chọn deploy. Chờ Web Service và Postgres hiện trạng thái **Live**; mở URL `onrender.com` của Web Service, không dùng `/docs` làm trang chính.
-
-## Giới hạn của bản miễn phí hiện tại
-
-- Web Service có thể ngủ sau 15 phút không có truy cập; lần mở tiếp theo có thể mất khoảng một phút để thức dậy.
-- Postgres miễn phí có hạn mức và hết hạn sau 30 ngày. Không dùng để giữ kết quả quan trọng nếu chưa xuất bản sao lưu.
-- `MATCHES_ENABLED=false`. Blueprint này chưa triển khai worker chấm bot. Vì vậy, API có thể nhận tài khoản và ghi bài nộp vào hàng đợi, nhưng bài nộp sẽ chưa được biên dịch/xử lý và chưa có trận tự động. Không công bố cuộc thi thật cho tới khi worker được triển khai và kiểm tra.
-- Worker hiện tại chạy bot bằng Docker socket; Render Free không cung cấp Background Worker miễn phí. Không bật ghép trận chỉ bằng cách đổi `MATCHES_ENABLED`.
-
-## Cấu hình
-
-Render lấy kết nối PostgreSQL từ Blueprint; code chuyển URL của Render sang driver Psycopg 3. `Dockerfile` dùng biến `PORT` do nền tảng cung cấp, còn Docker Compose cục bộ đặt `PORT=8000`.
-
-Các secret chỉ nhập trong Render Dashboard. Không commit `.env`, registration token, `ADMIN_API_KEY` hoặc mật khẩu cơ sở dữ liệu vào GitHub.
+Không đưa `.env`, `.env.worker`, `ADMIN_PASSWORD`, `ADMIN_API_KEY` hoặc URL database lên GitHub. Nếu website chạy commit mới nhưng trang admin chưa có mục phân công trận, kiểm tra bản deploy của Web Service trong Render Dashboard.

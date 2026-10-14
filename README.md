@@ -16,14 +16,16 @@ flowchart LR
     U[Đội thi / trình duyệt] --> WEB[Website + FastAPI trên Render]
     A[Ban tổ chức /admin] --> WEB
     WEB <--> DB[(Render PostgreSQL)]
-    DB -->|bài nộp và job trong hàng đợi| W[Worker Python trên máy có Docker Desktop]
-    W -->|biên dịch và chạy bot cô lập| S[Docker sandbox: Python / C++]
-    S --> W
-    W -->|trạng thái bài, kết quả, lịch sử| DB
+    DB -->|job giao cho may-1| W1[Worker trên máy 1]
+    DB -->|job giao cho may-2| W2[Worker trên máy 2]
+    W1 --> S1[Sandbox Docker máy 1]
+    W2 --> S2[Sandbox Docker máy 2]
+    W1 -->|kết quả| DB
+    W2 -->|kết quả| DB
     DB -->|bảng xếp hạng / lịch sử| WEB
 ```
 
-Render chạy website/API và PostgreSQL. Worker hiện chạy trên máy của ban tổ chức bằng Docker Desktop; máy đó cần bật, có Internet và không ngủ trong lúc thi. Worker kết nối trực tiếp tới cùng PostgreSQL trên Render.
+Render chạy website/API và PostgreSQL. Mỗi worker chạy trên một máy có Docker Desktop, có mã `WORKER_ID` riêng và kết nối tới cùng PostgreSQL trên Render. Admin chọn hai đội và worker nhận trận. Máy nào được giao trận thì máy đó chạy hai bot của trận đó.
 
 ### Worker thực tế so với sơ đồ module
 
@@ -32,8 +34,8 @@ Sơ đồ có Job Queue, Match Worker, Job Handler, Match Loader, Sandbox Manage
 Luồng xử lý:
 
 1. Đội đăng ký/đăng nhập trên website và gửi mã nguồn bot. API lưu tài khoản, bài nộp và job biên dịch vào PostgreSQL.
-2. Worker lấy job chưa xử lý, biên dịch/kiểm tra bot trong sandbox. Artifact đã biên dịch được lưu trong volume Docker của worker.
-3. Khi lịch đang mở, worker ghép các bot đã biên dịch thành công, chạy từng lượt và kiểm tra nước đi theo luật OTTv2.
+2. Worker lấy job chưa xử lý, biên dịch/kiểm tra bot trong sandbox. Artifact đã biên dịch được lưu trong volume Docker riêng của từng máy.
+3. Khi lịch đang mở, admin giao trận đội 1–2 cho `may-1`, trận đội 3–4 cho `may-2`. Worker chỉ nhận job có đúng `WORKER_ID` của mình. Nếu thiếu artifact trên máy đó, worker tự biên dịch lại từ mã nguồn đã lưu trong PostgreSQL, rồi chạy hai bot và kiểm tra luật OTTv2.
 4. Worker ghi trận, diễn biến, điểm và đội thắng vào PostgreSQL; website đọc dữ liệu đó để hiển thị lịch sử và bảng xếp hạng.
 
 Website hiển thị `Đang mở` khi cấu hình cho phép và nằm trong khung giờ. Điều đó **không tự chứng minh máy worker đang hoạt động**. Nếu worker tắt, job sẽ nằm chờ hoặc trận không chạy. Chỉ để `MATCHES_ENABLED=true` khi đã bật worker.
@@ -47,6 +49,7 @@ oantuti_server/
 │   ├── worker.py           # Hàng đợi, biên dịch, ghép trận, luật/game runner, ghi kết quả
 │   ├── models.py           # Bảng PostgreSQL: đội, bài nộp, job, trận, lịch
 │   ├── db.py               # Kết nối và session SQLAlchemy
+│   ├── schema.py           # Tạo và cập nhật bảng PostgreSQL
 │   ├── event_schedule.py   # Trạng thái lịch theo giờ Việt Nam
 │   └── security.py         # Token đội và kiểm tra quyền
 ├── web/
@@ -92,9 +95,9 @@ notepad .env
 docker compose up --build -d
 ```
 
-Trong `.env`, thay `POSTGRES_PASSWORD`, `ADMIN_API_KEY` và `ADMIN_PASSWORD` bằng giá trị riêng, khó đoán; giữ `ADMIN_USERNAME=admin`. Đặt `MATCHES_ENABLED=true` nếu muốn worker local ghép trận. `.env` bị Git bỏ qua; không tải file này lên GitHub.
+Trong `.env`, thay `POSTGRES_PASSWORD`, `ADMIN_API_KEY` và `ADMIN_PASSWORD` bằng giá trị riêng, khó đoán; giữ `ADMIN_USERNAME=admin`. Đặt `MATCHES_ENABLED=true` để chạy trận local và giữ `WORKER_ID=may-1`. `.env` bị Git bỏ qua; không tải file này lên GitHub.
 
-Mở [http://localhost:8000/](http://localhost:8000/) để đăng ký hai đội và nộp bot. Vào [http://localhost:8000/admin](http://localhost:8000/admin) để đăng nhập bằng `ADMIN_USERNAME`/`ADMIN_PASSWORD` trong `.env` và đặt lịch. Với demo ngay, đặt `AUTO_MATCH_START=00:00` để worker không phải đợi tới một giờ muộn hơn trong ngày.
+Mở [http://localhost:8000/](http://localhost:8000/) để đăng ký hai đội và nộp bot. Vào [http://localhost:8000/admin](http://localhost:8000/admin) để đăng nhập bằng `ADMIN_USERNAME`/`ADMIN_PASSWORD` trong `.env`, mở lịch và giao trận cho `may-1`. Chế độ ghép tự động hằng ngày mặc định tắt (`AUTO_PAIR_ENABLED=false`) để không tạo trận ngoài danh sách admin phân công.
 
 ```powershell
 docker compose ps
@@ -115,7 +118,7 @@ docker compose logs -f api worker
    notepad .env.worker
    ```
 
-   Giữ các biến còn lại trong mẫu. Không gửi URL này vào chat công khai, không đưa vào README, không commit `.env.worker`. Nếu bạn cùng tổ chức cần chạy worker, gửi URL qua kênh bí mật đáng tin cậy.
+   Máy thứ nhất dùng `WORKER_ID=may-1`; máy thứ hai dùng `WORKER_ID=may-2`. Hai máy dùng cùng External Database URL nhưng có `WORKER_ID` khác nhau. Giữ `AUTO_PAIR_ENABLED=false` để admin tự phân công từng trận. Không gửi URL này vào chat công khai, không đưa vào README, không commit `.env.worker`. Nếu bạn cùng tổ chức cần chạy worker, gửi URL qua kênh bí mật đáng tin cậy.
 
 3. Mở Docker Desktop và chờ Engine chạy, sau đó bật worker:
 
@@ -131,16 +134,16 @@ docker compose logs -f api worker
    docker compose -f docker-compose.remote-worker.yml down
    ```
 
-4. Trong Render → Web Service `oantuti-demo` → **Environment**, bật `MATCHES_ENABLED=true` khi worker đang chạy. Trang `/admin` cho phép đặt thời gian; worker ghép bot sẵn sàng theo lịch. Kiểm tra trạng thái container và log worker trước khi thông báo bắt đầu thi.
-5. Giữ máy tính bật, kết nối Internet và ngăn Windows Sleep trong toàn bộ khung giờ. Nếu máy tắt hoặc Docker Desktop dừng, worker ngừng lấy job; bật lại Docker Desktop và kiểm tra log sau khi khởi động.
+4. Trong Render → Web Service `oantuti-demo` → **Environment**, bật `MATCHES_ENABLED=true` khi worker đang chạy. Trên trang `/admin`, mở lịch, chờ hai máy xuất hiện trong danh sách trực tuyến, rồi chọn hai đội và máy nhận từng trận. Ví dụ giao đội 1–2 cho `may-1`, đội 3–4 cho `may-2`. Hai trận có thể chạy song song.
+5. Giữ cả hai máy bật, kết nối Internet và ngăn Windows Sleep trong toàn bộ khung giờ. Nếu một máy tắt, các trận đã giao cho máy đó vẫn nằm chờ; máy còn lại tiếp tục xử lý trận của mình.
 
-### Nếu chuyển worker sang máy bạn cùng nhóm
+### Hai worker trên hai máy
 
-Trên máy mới, cài Git/Docker Desktop, clone repository, tạo `.env.worker` từ `.env.worker.example`, rồi lấy **External Database URL của chính database Render này** và nhập vào file. Sau đó chạy các lệnh Compose ở trên. Không dùng `.env` local của máy mới nếu mục tiêu là xử lý bài thi trên Render; `.env` đó trỏ tới database local khác.
+Trên máy bạn cùng nhóm, cài Git/Docker Desktop, clone repository, tạo `.env.worker` từ `.env.worker.example`, nhập **External Database URL của chính database Render này** và đổi thành `WORKER_ID=may-2`. Chạy các lệnh Compose ở trên. Máy bạn dùng `WORKER_ID=may-1`. Cả hai worker tự báo trạng thái trực tuyến về database để trang admin liệt kê. Không dùng `.env` local của máy mới nếu mục tiêu là xử lý bài thi trên Render; `.env` đó trỏ tới database local khác.
 
-**Hiện tại chỉ nên có một worker hoạt động tại một thời điểm. Không bật worker trên hai máy khác nhau cùng lúc.** PostgreSQL khóa job để tránh hai worker cùng lấy một job, nhưng mỗi máy có volume artifact riêng: máy A có thể biên dịch bot, còn máy B lấy job trận và không tìm thấy file đã biên dịch. Phần ghép cặp hằng ngày cũng chưa có khóa phân tán đầy đủ. Vì vậy chạy đồng thời trên hai máy có thể làm trận lỗi hoặc ghép trùng. Muốn đổi máy, dừng worker cũ trước; việc chuyển tiếp kết quả đang chờ giữa hai máy chưa được tự động hỗ trợ.
+Mỗi worker chỉ lấy job được giao cho mã máy của nó; job biên dịch và thách đấu không gắn máy có thể được một trong hai worker lấy. PostgreSQL khóa hàng job để hai máy không xử lý cùng một job. Khi chạy trận, worker sẽ tạo artifact cục bộ nếu máy đó chưa có. Không đặt cùng `WORKER_ID` trên hai máy.
 
-Để hỗ trợ nhiều máy worker an toàn trong tương lai, cần chuyển artifact sang kho dùng chung (hoặc lưu trong database), bổ sung khóa phân tán cho việc ghép lịch và cơ chế khôi phục job bị gián đoạn.
+Nếu máy tắt giữa lúc trận đang chạy, job có thể kẹt ở trạng thái `running`; phiên bản này chưa tự khôi phục trận bị gián đoạn. Các trận còn ở trạng thái `queued` sẽ chạy khi đúng máy được giao bật lại. Không nên bật ghép tự động hằng ngày cùng lúc trên hai máy; phân công trận bằng admin là chế độ mặc định.
 
 ## Tài khoản admin và bí mật
 
@@ -173,8 +176,8 @@ Sau khi sửa README hoặc mã trong thư mục dự án:
 
 ```powershell
 git status
-git add README.md app/worker.py sandbox/entrypoint.py
-git commit -m "Document setup and fix worker sandbox input"
+git add README.md .env.example .env.worker.example DEPLOY_RENDER_FREE.md app/ web/
+git commit -m "Add match assignment by worker"
 git push origin main
 ```
 

@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from .db import Base
 
@@ -30,12 +30,12 @@ class Job(Base):
     kind: Mapped[str] = mapped_column(String(20))
     payload: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
+    worker_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
 class Match(Base):
     __tablename__ = "matches"
-    __table_args__ = (UniqueConstraint("player_a", "player_b", "event_day", name="uq_daily_pair"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     player_a: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
     player_b: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
@@ -44,6 +44,7 @@ class Match(Base):
     event_day: Mapped[str] = mapped_column(String(10), index=True)
     kind: Mapped[str] = mapped_column(String(20))
     status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
+    worker_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     winner_id: Mapped[int | None] = mapped_column(ForeignKey("players.id"), nullable=True)
     points_a: Mapped[float] = mapped_column(Float, default=0)
     points_b: Mapped[float] = mapped_column(Float, default=0)
@@ -57,3 +58,9 @@ class EventControl(Base):
     end_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     enabled: Mapped[bool] = mapped_column(default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+
+class WorkerNode(Base):
+    __tablename__ = "worker_nodes"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    instance_token: Mapped[str] = mapped_column(String(64))
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
