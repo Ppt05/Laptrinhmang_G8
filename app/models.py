@@ -49,3 +49,11 @@ class Match(Base):
     points_b: Mapped[float] = mapped_column(Float, default=0)
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+class EventControl(Base):
+    __tablename__ = "event_control"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    start_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    end_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    enabled: Mapped[bool] = mapped_column(default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)

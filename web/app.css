@@ -45,7 +45,20 @@
 .account-dialog .text-button{font-size:12px}
 .account-dialog .form-message{font-size:12px}
 .protocol-note p{font-size:10px}
-.protocol-note a{font-size:inherit}
+.protocol-note a,.protocol-note button{font-size:inherit}
+.nav-link{padding:0;border:0;background:transparent;color:inherit;font:inherit;font-weight:600;cursor:pointer}
+.link-button{padding:0;border:0;background:none;cursor:pointer}
+.rules-dialog{width:min(980px,calc(100% - 32px));max-height:min(90vh,900px);overflow:auto;border:1px solid var(--line);border-radius:18px;padding:clamp(20px,4vw,38px);background:#fff;color:var(--ink);box-shadow:0 24px 80px #071a3266}
+.rules-dialog::backdrop{background:#0b1b31aa;backdrop-filter:blur(3px)}
+.rules-dialog .dialog-heading{margin-bottom:8px}
+.rules-dialog .dialog-heading h2{font-size:32px}
+.rules-intro{max-width:720px;color:var(--muted);font-size:14px;line-height:1.8;margin-bottom:24px}
+.rules-dialog .rule-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.rules-dialog .rule-card{min-height:172px;padding:20px}
+.rules-dialog .rule-card h3{font-size:15px}
+.rules-dialog .rule-card p{font-size:12px}
+.rules-dialog .rule-protocol{grid-column:1/-1;min-height:unset}
+.rules-dialog code{background:#eff4fa;padding:2px 5px;border-radius:4px;color:#183b67;overflow-wrap:anywhere}
 .footer{padding:20px 0}
 .footer-inner{font-size:11px}
-@media(max-width:700px){.topbar{height:64px;padding:0 16px}.brand{max-width:54vw;font-size:11px;line-height:1.4}.account-actions{gap:6px}.topbar .button-small{min-height:34px;padding:7px 10px;font-size:10px}.board-card{max-width:390px;padding:14px}.board-frame{padding:4px}.piece{width:clamp(22px,7vw,31px);height:clamp(22px,7vw,31px)}.account-dialog{padding:21px}}
+@media(max-width:700px){.topbar{height:64px;padding:0 16px}.brand{max-width:54vw;font-size:11px;line-height:1.4}.account-actions{gap:6px}.topbar .button-small{min-height:34px;padding:7px 10px;font-size:10px}.board-card{max-width:390px;padding:14px}.board-frame{padding:4px}.piece{width:clamp(22px,7vw,31px);height:clamp(22px,7vw,31px)}.account-dialog{padding:21px}.rules-dialog .rule-grid{grid-template-columns:1fr}.rules-dialog .rule-protocol{grid-column:auto}.rules-dialog .dialog-heading h2{font-size:26px}.topbar nav{display:flex;gap:14px}.topbar nav a,.topbar nav button{font-size:10px}.topbar .brand{max-width:34vw}}

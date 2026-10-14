@@ -82,6 +82,13 @@ $("#accountDialog").addEventListener("click", (event) => {
   if (event.target === event.currentTarget) event.currentTarget.close();
 });
 
+const rulesDialog = $("#rulesDialog");
+$$("[data-open-rules]").forEach((button) => button.addEventListener("click", () => rulesDialog.showModal()));
+$("#closeRules").addEventListener("click", () => rulesDialog.close());
+rulesDialog.addEventListener("click", (event) => {
+  if (event.target === event.currentTarget) rulesDialog.close();
+});
+
 $$(".tab").forEach((tab) => tab.addEventListener("click", () => activateTab(tab.dataset.tab)));
 
 $("#registerForm").addEventListener("submit", async (event) => {
@@ -169,6 +176,22 @@ async function refreshLeaderboard() {
 
 $("#refreshBtn").addEventListener("click", () => { refreshDashboard(); refreshLeaderboard(); });
 
+async function refreshEventStatus() {
+  try {
+    const meta = await request("/api/meta");
+    const start = dateText(meta.start_at);
+    const end = dateText(meta.end_at);
+    const statusMessages = {
+      open: `Thi đấu đang mở từ ${start} đến ${end}. Nộp bot và theo dõi kết quả trên bảng xếp hạng.`,
+      scheduled: `Cuộc thi đã lên lịch mở từ ${start} đến ${end}.`,
+      closed: "Khung giờ thi đấu đã đóng. Ban tổ chức sẽ cập nhật kết quả tại đây.",
+      worker_unavailable: `Đã đến khung giờ thi ${start} – ${end}, nhưng máy chủ chạy bot chưa sẵn sàng.`,
+      not_scheduled: "Chưa có lịch thi đấu. Ban tổ chức sẽ cập nhật thời gian tại đây.",
+    };
+    $("#eventStatus").textContent = statusMessages[meta.status] || "Chưa tải được lịch thi đấu.";
+  } catch { $("#eventStatus").textContent = "Không lấy được trạng thái máy chủ. Hãy tải lại trang sau ít phút."; }
+}
+
 async function init() {
   paintSession();
   refreshLeaderboard();
@@ -180,13 +203,8 @@ async function init() {
       refreshDashboard();
     } catch { sessionStorage.removeItem(tokenKey); sessionStorage.removeItem(teamKey); paintSession(); }
   }
-  try {
-    const meta = await request("/api/meta");
-    $("#eventStatus").textContent = meta.matches_enabled
-      ? "Hệ thống nhận bot OTTv2 và đang mở thi đấu. Xem thể lệ trước khi nộp bài."
-      : "Khu vực nộp bài đã sẵn sàng; ghép trận đang tạm khóa trong lúc ban tổ chức hoàn thiện bot OTTv2.";
-  } catch { $("#eventStatus").textContent = "Không lấy được trạng thái máy chủ. Hãy tải lại trang sau ít phút."; }
+  refreshEventStatus();
 }
 
 init();
-setInterval(() => { if (token()) refreshDashboard(); refreshLeaderboard(); }, 30000);
+setInterval(() => { if (token()) refreshDashboard(); refreshLeaderboard(); refreshEventStatus(); }, 30000);

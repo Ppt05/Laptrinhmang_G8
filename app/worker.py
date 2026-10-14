@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .db import Base, SessionLocal, engine
 from .models import Job, Match, Submission
+from .event_schedule import get_event_state
 
 DATA = Path(os.getenv("APP_DATA", "/app/data")); ARTIFACTS = DATA / "artifacts"
 IMAGE = os.getenv("SANDBOX_IMAGE", "oantuti-sandbox:dev")
@@ -205,7 +206,9 @@ def main():
     while True:
         now = datetime.now(tz)
         start = datetime.strptime(os.getenv("AUTO_MATCH_START", "19:00"), "%H:%M").time()
-        if os.getenv("MATCHES_ENABLED", "false").lower() == "true" and now.time() >= start and last_pair_day != now.date().isoformat():
+        with SessionLocal() as db:
+            event_open = get_event_state(db, os.getenv("MATCHES_ENABLED", "false").lower() == "true", now)["matches_enabled"]
+        if event_open and now.time() >= start and last_pair_day != now.date().isoformat():
             try:
                 create_daily_pairings(now.date().isoformat())
                 last_pair_day = now.date().isoformat()

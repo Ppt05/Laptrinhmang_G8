@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/app.css?v=5">
+  <link rel="stylesheet" href="/assets/app.css?v=6">
   <link rel="stylesheet" href="/assets/status.css?v=4">
 </head>
 <body>
@@ -18,7 +18,7 @@
       <span>Oẳn Tù Tì chiến thuật · Thi đấu bằng lập trình</span>
     </a>
     <nav aria-label="Điều hướng chính">
-      <a href="#the-le">Luật chơi</a><a href="#thi-dau">Thi đấu</a><a href="#bang-xep-hang">Bảng xếp hạng</a>
+      <button class="nav-link" type="button" data-open-rules>Luật chơi</button><a href="#thi-dau">Thi đấu</a><a href="#bang-xep-hang">Bảng xếp hạng</a>
     </nav>
     <div class="account-actions">
       <button id="navLogin" class="button button-outline button-small" type="button">Đăng nhập</button>
@@ -31,11 +31,11 @@
     <section class="hero wrap">
       <div class="hero-copy">
         <div class="eyebrow"><span class="live-dot"></span> CUỘC THI LẬP TRÌNH BOT</div>
-        <h1>Không ra kéo búa bao.<br><span>Hãy viết chiến thuật.</span></h1>
+        <h1>Viết bot.<br><span>Làm chủ bàn cờ.</span></h1>
         <p class="hero-text">Lập trình bot của bạn, đưa lên bàn cờ OTTv2 và xem chiến thuật đối đầu qua từng nước đi.</p>
         <div class="hero-actions">
           <a class="button button-blue" href="#thi-dau">Tham gia cuộc thi <span aria-hidden="true">→</span></a>
-          <a class="button button-outline" href="#the-le">Xem luật chơi</a>
+          <button class="button button-outline" type="button" data-open-rules>Xem luật chơi</button>
         </div>
         <div class="hero-facts"><span><b>9×9</b> bàn cờ</span><span><b>C++ / Python</b> ngôn ngữ</span><span><b>OTTv2</b> chiến thuật</span></div>
       </div>
@@ -57,15 +57,6 @@
       <div class="wrap status-inner"><span class="status-icon">i</span><p id="eventStatus">Đang tải trạng thái cuộc thi…</p><a href="#thi-dau">Xem khu vực thi đấu <span aria-hidden="true">↗</span></a></div>
     </section>
 
-    <section id="the-le" class="section wrap">
-      <div class="section-heading"><div><div class="eyebrow">CÁCH CHƠI</div><h2>Chiến thắng bằng nước đi</h2></div><p>Bot đọc trạng thái bàn cờ, chọn quân và nước đi hợp lệ. Hệ thống xử lý luật, chạy trận và cập nhật kết quả.</p></div>
-      <div class="rule-grid">
-        <article class="rule-card"><span class="rule-number">01</span><div class="rule-symbol">↗</div><h3>Di chuyển chiến thuật</h3><p>Mỗi lượt đi một quân đúng một ô theo một trong tám hướng. Xanh (South) đi trước.</p></article>
-        <article class="rule-card"><span class="rule-number">02</span><div class="cycle"><span>ĐẤM</span><b>›</b><span>KÉO</span><b>›</b><span>LÁ</span></div><h3>Khắc chế và ăn quân</h3><p>Đấm ăn Kéo, Kéo ăn Lá, Lá ăn Đấm. Quân cùng loại hoặc bị khắc chế sẽ chặn ô.</p></article>
-        <article class="rule-card"><span class="rule-number">03</span><div class="rule-symbol">◎</div><h3>Điều kiện thắng</h3><p>Ăn hết toàn bộ một loại quân đối thủ, hoặc đưa quân phe mình tới ô đích: Bắc tới a1, Nam tới i9.</p></article>
-      </div>
-    </section>
-
     <section id="thi-dau" class="section contest-section">
       <div class="wrap">
         <div class="section-heading"><div><div class="eyebrow">KHU VỰC THÍ SINH</div><h2>Đăng ký và thi đấu</h2></div><p>Tạo tài khoản đội để nộp bot. Sau khi đăng nhập, bạn có thể xem trạng thái các lần nộp và lịch sử trận.</p></div>
@@ -81,7 +72,7 @@
               <button class="button button-blue full" type="submit">Nộp mã nguồn <span>↑</span></button>
               <div class="form-message" aria-live="polite"></div>
             </form>
-            <div class="protocol-note"><span>?</span><p>Bot đọc từng dòng JSON từ <code>stdin</code> và trả một nước đi <code>{"piece_id":"S01","to":"a4"}</code> trên <code>stdout</code>. Xem hướng dẫn giao thức ở mục <a class="inline-link" href="#the-le">Luật chơi</a>.</p></div>
+            <div class="protocol-note"><span>?</span><p>Bot đọc từng dòng JSON từ <code>stdin</code> và trả một nước đi <code>{"piece_id":"S01","to":"a4"}</code> trên <code>stdout</code>. <button class="inline-link link-button" type="button" data-open-rules>Xem luật và giao thức.</button></p></div>
           </article>
         </div>
       </div>
@@ -105,7 +96,18 @@
     <section class="closing wrap"><div><div class="eyebrow">READY, BOT?</div><h2>Ý tưởng của bạn đi được bao xa?</h2></div><a class="button button-blue" href="#thi-dau">Vào khu vực thi đấu ↑</a></section>
   </main>
 
-  <footer class="footer"><div class="wrap footer-inner"><span>Oẳn Tù Tì chiến thuật · Thi đấu bằng lập trình</span><a href="#top">Về đầu trang ↑</a></div></footer>
+  <footer class="footer"><div class="wrap footer-inner"><span>Oẳn Tù Tì chiến thuật · Thi đấu bằng lập trình</span><a href="/admin">Ban tổ chức</a><a href="#top">Về đầu trang ↑</a></div></footer>
+  <dialog id="rulesDialog" class="rules-dialog" aria-labelledby="rulesTitle">
+    <div class="dialog-heading"><div><div class="eyebrow">OTTv2 · LUẬT THI ĐẤU</div><h2 id="rulesTitle">Luật chơi</h2></div><button id="closeRules" class="dialog-close" type="button" aria-label="Đóng luật chơi">×</button></div>
+    <p class="rules-intro">Hai bot điều khiển hai đội quân trên bàn cờ 9×9. Mỗi lượt, bot chọn một quân và một ô đến hợp lệ.</p>
+    <div class="rule-grid">
+      <article class="rule-card"><span class="rule-number">01</span><div class="rule-symbol">↗</div><h3>Di chuyển</h3><p>Mỗi lượt đi đúng một ô theo một trong tám hướng. Xanh (South) đi trước; Hồng (North) đi sau.</p></article>
+      <article class="rule-card"><span class="rule-number">02</span><div class="cycle"><span>ĐẤM</span><b>›</b><span>KÉO</span><b>›</b><span>LÁ</span></div><h3>Khắc chế và ăn quân</h3><p>Đấm ăn Kéo, Kéo ăn Lá, Lá ăn Đấm. Quân cùng loại hoặc quân không thể ăn nhau sẽ chặn ô.</p></article>
+      <article class="rule-card"><span class="rule-number">03</span><div class="rule-symbol">◎</div><h3>Điều kiện thắng</h3><p>Ăn hết một loại quân đối thủ hoặc đưa quân tới đích: Bắc tới a1, Nam tới i9.</p></article>
+      <article class="rule-card"><span class="rule-number">04</span><div class="rule-symbol">↻</div><h3>Hòa trận</h3><p>Trận hòa nếu lặp lại cùng thế cờ ba lần hoặc chạm giới hạn 200 nước đi mà chưa có bên thắng.</p></article>
+      <article class="rule-card rule-protocol"><span class="rule-number">05</span><div class="rule-symbol">{ }</div><h3>Bot giao tiếp</h3><p>Bot đọc từng dòng JSON từ <code>stdin</code>, chọn trong danh sách nước đi hợp lệ và in JSON một dòng ra <code>stdout</code>, ví dụ <code>{"piece_id":"S01","to":"a4"}</code>.</p></article>
+    </div>
+  </dialog>
   <dialog id="accountDialog" class="account-dialog">
     <div class="dialog-heading"><div><div class="eyebrow">TÀI KHOẢN ĐỘI</div><h2 id="dialogTitle">Đăng nhập</h2></div><button id="closeDialog" class="dialog-close" type="button" aria-label="Đóng">×</button></div>
     <div id="authForms">
@@ -127,6 +129,6 @@
     </div>
     <div id="signedIn" class="signed-in hidden"><div class="signed-avatar">♟</div><div class="signed-copy"><span class="eyebrow">ĐỘI ĐANG ĐĂNG NHẬP</span><h3 id="teamName">—</h3><button id="logoutBtn" class="text-button" type="button">Đăng xuất</button></div></div>
   </dialog>
-  <script src="/assets/app.js?v=5" defer></script>
+  <script src="/assets/app.js?v=6" defer></script>
 </body>
 </html>

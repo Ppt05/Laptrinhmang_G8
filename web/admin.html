@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10294b">
+  <title>Quản trị cuộc thi Oẳn Tù Tì</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/app.css?v=6">
+  <link rel="stylesheet" href="/assets/admin.css?v=1">
+</head>
+<body class="admin-page">
+  <header class="topbar">
+    <a class="brand" href="/">Oẳn Tù Tì chiến thuật · Ban tổ chức</a>
+    <a class="button button-outline button-small" href="/">← Về trang thi</a>
+  </header>
+  <main class="admin-wrap">
+    <div class="eyebrow">KHU VỰC BAN TỔ CHỨC</div>
+    <h1>Quản lý lịch thi đấu</h1>
+    <p class="admin-lead">Đặt thời gian mở và đóng. Trạng thái lịch được lưu trên máy chủ và hiển thị ở trang thi.</p>
+    <section class="panel admin-panel">
+      <div class="admin-status-row"><div><div class="eyebrow">TRẠNG THÁI HIỆN TẠI</div><h2 id="eventState">Chưa tải trạng thái</h2></div><span id="stateBadge" class="state-badge">—</span></div>
+      <p id="workerNote" class="worker-note">Nhập khóa quản trị để tải lịch.</p>
+      <form id="adminForm">
+        <label>Khóa quản trị
+          <input id="adminKey" type="password" autocomplete="off" placeholder="Lấy trong Render → Environment → ADMIN_API_KEY" required>
+        </label>
+        <button class="button button-navy" id="loadSchedule" type="button">Tải lịch đã lưu</button>
+        <div class="date-grid">
+          <label>Bắt đầu (giờ Việt Nam)<input id="startAt" type="datetime-local" required></label>
+          <label>Kết thúc (giờ Việt Nam)<input id="endAt" type="datetime-local" required></label>
+        </div>
+        <div class="admin-actions">
+          <button class="button button-blue" type="submit" data-enabled="true">Lưu lịch và mở theo giờ</button>
+          <button class="button button-outline" type="button" id="closeEvent">Đóng thi đấu</button>
+        </div>
+        <p id="adminMessage" class="admin-message" aria-live="polite"></p>
+      </form>
+    </section>
+    <aside class="admin-help"><strong>Lưu ý về worker</strong><p>Nút quản trị đặt lịch và đóng/mở trạng thái. Trên Render hiện chưa có worker chạy sandbox cho bot; khi khung giờ mở, trang sẽ báo rõ nếu chưa thể chạy trận. Không bật thi đấu thật trước khi worker được triển khai.</p></aside>
+  </main>
+  <script src="/assets/admin.js?v=1" defer></script>
+</body>
+</html>

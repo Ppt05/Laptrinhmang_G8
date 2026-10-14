@@ -1,5 +1,5 @@
 import json, os, re, secrets
-from datetime import datetime, time, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse
@@ -8,7 +8,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select, text
 from pathlib import Path
 from .db import Base, SessionLocal, engine
-from .models import Job, Match, Player, Submission
+from .models import EventControl, Job, Match, Player, Submission
+from .event_schedule import as_vietnam_time, get_event_state
 from .security import authorized_player, check_registration, digest, hash_password, new_token, verify_password
 
 app = FastAPI(title="OanTuTi Bot League", version="0.2.0", description="OTTv2: game chiến thuật bàn cờ 9×9",
@@ -28,6 +29,15 @@ class Login(BaseModel): name: str = Field(min_length=2, max_length=60); password
 class ClaimAccount(BaseModel): name: str = Field(min_length=2, max_length=60); registration_token: str; password: str = Field(min_length=8, max_length=128)
 class Submit(BaseModel): language: str; source: str = Field(min_length=1)
 class Challenge(BaseModel): opponent_id: int
+class EventScheduleInput(BaseModel): start_at: datetime; end_at: datetime; enabled: bool
+
+def matches_engine_enabled():
+    return os.getenv("MATCHES_ENABLED", "false").lower() == "true"
+
+def require_admin(key):
+    expected = os.getenv("ADMIN_API_KEY", "")
+    if not expected or not secrets.compare_digest(key or "", expected):
+        raise HTTPException(401, "Admin key không hợp lệ")
 
 def latest_ready(db, player_id):
     return db.scalar(select(Submission).where(Submission.player_id == player_id, Submission.status == "ready").order_by(Submission.id.desc()))
@@ -36,10 +46,42 @@ def latest_ready(db, player_id):
 def home():
     return FileResponse(WEB_DIR / "index.html")
 
+@app.get("/admin")
+def admin_page():
+    return FileResponse(WEB_DIR / "admin.html")
+
 @app.get("/api/meta")
 def meta():
-    return {"name": "OanTuTi Bot League", "protocol_version": 2,
-            "matches_enabled": os.getenv("MATCHES_ENABLED", "false").lower() == "true"}
+    with SessionLocal() as db:
+        return {"name": "OanTuTi Bot League", "protocol_version": 2,
+                **get_event_state(db, matches_engine_enabled())}
+
+@app.get("/api/admin/event")
+def admin_get_event(x_admin_key: str | None = Header(default=None)):
+    require_admin(x_admin_key)
+    with SessionLocal() as db:
+        control = db.get(EventControl, 1)
+        return {"start_at": control.start_at if control else None,
+                "end_at": control.end_at if control else None,
+                "enabled": bool(control and control.enabled),
+                "event": get_event_state(db, matches_engine_enabled())}
+
+@app.put("/api/admin/event")
+def admin_set_event(body: EventScheduleInput, x_admin_key: str | None = Header(default=None)):
+    require_admin(x_admin_key)
+    start, end = as_vietnam_time(body.start_at), as_vietnam_time(body.end_at)
+    if end <= start:
+        raise HTTPException(400, "Thời điểm kết thúc phải sau thời điểm bắt đầu")
+    with SessionLocal.begin() as db:
+        control = db.get(EventControl, 1)
+        if control is None:
+            control = EventControl(id=1)
+            db.add(control)
+        control.start_at, control.end_at, control.enabled = start.isoformat(), end.isoformat(), body.enabled
+    with SessionLocal() as db:
+        control = db.get(EventControl, 1)
+        return {"start_at": control.start_at, "end_at": control.end_at,
+                "enabled": control.enabled, "event": get_event_state(db, matches_engine_enabled())}
 
 @app.get("/health")
 def health(): return {"ok": True}
@@ -115,10 +157,12 @@ def my_matches(player_id: int = Depends(authorized_player)):
 
 @app.post("/api/challenges")
 def challenge(body: Challenge, player_id: int = Depends(authorized_player)):
-    if os.getenv("MATCHES_ENABLED", "false").lower() != "true": raise HTTPException(503, "Thi đấu đang tạm khóa trong lúc chuyển sang giao thức OTTv2")
-    now = datetime.now(VN).time()
-    start = time.fromisoformat(os.getenv("CHALLENGE_START", "20:00")); end = time.fromisoformat(os.getenv("CHALLENGE_END", "22:00"))
-    if not start <= now < end: raise HTTPException(400, f"Thách đấu mở từ {start:%H:%M} đến {end:%H:%M} giờ Việt Nam")
+    with SessionLocal() as db:
+        state = get_event_state(db, matches_engine_enabled())
+    if not state["matches_enabled"]:
+        if state["window_active"] and not state["worker_enabled"]:
+            raise HTTPException(503, "Đã đến lịch thi đấu nhưng máy chủ chạy bot chưa được cấu hình")
+        raise HTTPException(400, "Hiện không nằm trong khung giờ thi đấu")
     if body.opponent_id == player_id: raise HTTPException(400, "Không thể thách đấu chính mình")
     with SessionLocal() as db:
         a, b = latest_ready(db, player_id), latest_ready(db, body.opponent_id)
@@ -152,10 +196,12 @@ def leaderboard():
 
 @app.post("/api/admin/pair-daily")
 def pair_daily(x_admin_key: str | None = Header(default=None)):
-    if not secrets.compare_digest(x_admin_key or "", os.getenv("ADMIN_API_KEY", "")): raise HTTPException(401, "Admin key không hợp lệ")
-    if os.getenv("MATCHES_ENABLED", "false").lower() != "true": raise HTTPException(503, "Ghép trận đang tạm khóa trong lúc chuyển sang giao thức OTTv2")
-    now = datetime.now(VN); start = time.fromisoformat(os.getenv("AUTO_MATCH_START", "19:00"))
-    if now.time() < start: raise HTTPException(400, "Chưa đến khung giờ ghép trận tự động")
+    require_admin(x_admin_key)
+    with SessionLocal() as db:
+        state = get_event_state(db, matches_engine_enabled())
+    if not state["matches_enabled"]:
+        raise HTTPException(503, "Chưa thể ghép trận: cần lịch đang mở và worker chạy bot")
+    now = datetime.now(VN)
     day = now.date().isoformat()
     with SessionLocal() as db:
         if db.scalar(select(Match.id).where(Match.event_day == day, Match.kind == "daily")): return {"created": 0, "reason": "daily pairing already started"}
