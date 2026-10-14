@@ -35,6 +35,8 @@ flowchart LR
 4. Mỗi trận được đưa vào hàng chờ chung. Worker nào rảnh lấy trước, chạy hai bot trong hai sandbox, áp dụng luật OTTv2 rồi lưu diễn biến và kết quả. PostgreSQL khóa job để hai worker không nhận cùng một trận.
 5. Website hiển thị kết quả và bảng xếp hạng từ PostgreSQL. Nếu chỉ một worker bật, nó xử lý lần lượt tất cả job đang chờ. Khi cả hai bật, chúng có thể chạy hai trận song song.
 
+Sau khi trận kết thúc, người xem bấm **Xem trận** trên thanh điều hướng để phát lại bàn cờ 9×9, xem từng nước đi hoặc phát tự động. Đội đã đăng nhập cũng có nút **Xem lại trận** trong lịch sử đấu. Tính năng này đọc diễn biến đã lưu trong PostgreSQL; nó không truyền trực tiếp khi trận còn đang chạy.
+
 Ví dụ lịch bắt đầu **20:40 ngày 14/10** và kết thúc **20:40 ngày 22/10** theo giờ Việt Nam: hệ thống ghép lúc 20:40 mỗi ngày còn nằm trong lịch. Nếu worker được bật sau giờ ghép của ngày đó, nó sẽ ghép ngay khi kết nối, miễn là chưa có lượt ghép tự động trong ngày.
 
 > **Giới hạn hiện tại:** Nếu máy tắt khi một trận đã ở trạng thái `running`, trận đó chưa được tự động chuyển sang máy khác. Các trận còn ở trạng thái `queued` vẫn được worker còn lại nhận.
@@ -46,6 +48,7 @@ oantuti_server/
 ├── app/
 │   ├── main.py                 # FastAPI: tài khoản, bài nộp, kết quả, lịch admin
 │   ├── worker.py               # Ghép đội, lấy job, chạy bot, ghi kết quả
+│   ├── game_setup.py           # Thế cờ ban đầu dùng chung cho worker và phát lại
 │   ├── models.py               # Các bảng PostgreSQL
 │   ├── schema.py               # Tạo và nâng cấp cấu trúc bảng
 │   ├── event_schedule.py       # Tính trạng thái lịch theo giờ Việt Nam

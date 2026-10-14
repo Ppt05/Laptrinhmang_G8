@@ -7,6 +7,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 from .db import SessionLocal, engine
 from .models import Job, Match, Submission, WorkerNode
+from .game_setup import coord, new_game, square
 from .event_schedule import get_event_state
 from .schema import ensure_schema
 
@@ -15,30 +16,6 @@ IMAGE = os.getenv("SANDBOX_IMAGE", "oantuti-sandbox:dev")
 WORKER_ID = os.getenv("WORKER_ID", "may-1")
 # OTTv2 tactical board game: coordinates use a1=(0,0), i9=(8,8).
 BEATS = {"rock": "scissors", "scissors": "paper", "paper": "rock"}
-FILES = "abcdefghi"
-INITIAL = [
-    ("N01", "north", "paper", "e8"), ("N02", "north", "rock", "f8"),
-    ("N03", "north", "scissors", "e7"), ("N04", "north", "paper", "f7"),
-    ("N05", "north", "rock", "g7"), ("N06", "north", "scissors", "f6"),
-    ("N07", "north", "paper", "g6"), ("N08", "north", "rock", "h6"),
-    ("N09", "north", "scissors", "g5"), ("N10", "north", "paper", "h5"),
-    ("S01", "south", "paper", "b5"), ("S02", "south", "scissors", "c5"),
-    ("S03", "south", "rock", "b4"), ("S04", "south", "paper", "c4"),
-    ("S05", "south", "scissors", "d4"), ("S06", "south", "rock", "c3"),
-    ("S07", "south", "paper", "d3"), ("S08", "south", "scissors", "e3"),
-    ("S09", "south", "rock", "d2"), ("S10", "south", "paper", "e2"),
-]
-
-def coord(square):
-    return FILES.index(square[0]), int(square[1:]) - 1
-
-def square(x, y):
-    return f"{FILES[x]}{y + 1}"
-
-def new_game():
-    return {"pieces": [{"id": i, "side": side, "type": typ, "x": coord(pos)[0], "y": coord(pos)[1]}
-                       for i, side, typ, pos in INITIAL], "turn": "south", "move_number": 1,
-            "winner": None, "win_reason": None}
 
 def legal_moves(game, side):
     occupied = {(p["x"], p["y"]): p for p in game["pieces"]}

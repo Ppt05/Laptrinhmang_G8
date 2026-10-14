@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from pathlib import Path
 from .db import SessionLocal
+from .game_setup import new_game
 from .models import EventControl, Job, Match, Player, Submission, WorkerNode
 from .event_schedule import as_vietnam_time, get_event_state
 from .security import authorized_player, check_registration, digest, hash_password, new_token, verify_password
@@ -226,12 +227,36 @@ def challenge(body: Challenge, player_id: int = Depends(authorized_player)):
         db.add(m); db.flush(); db.add(Job(kind="match", payload=json.dumps({"match_id": m.id})))
         return {"match_id": m.id, "status": "queued"}
 
+@app.get("/api/replays")
+def replays(offset: int = 0, limit: int = 30):
+    if offset < 0 or limit < 1 or limit > 100:
+        raise HTTPException(400, "offset hoặc limit không hợp lệ")
+    with SessionLocal() as db:
+        matches = db.scalars(select(Match).where(Match.status == "done")
+                             .order_by(Match.id.desc()).offset(offset).limit(limit + 1)).all()
+        names = {p.id: p.name for p in db.scalars(select(Player)).all()}
+        items = []
+        for m in matches[:limit]:
+            detail = json.loads(m.detail) if m.detail else {}
+            items.append({"id": m.id, "team_a": names.get(m.player_a, "Đội A"),
+                          "team_b": names.get(m.player_b, "Đội B"),
+                          "winner": names.get(m.winner_id) if m.winner_id else None,
+                          "event_day": m.event_day, "kind": m.kind,
+                          "move_count": len(detail.get("turns", []))})
+        return {"items": items, "has_more": len(matches) > limit}
+
 @app.get("/api/matches/{match_id}")
 def get_match(match_id: int):
     with SessionLocal() as db:
         m = db.get(Match, match_id)
         if not m: raise HTTPException(404, "Không tìm thấy trận")
-        return {"id": m.id, "player_a": m.player_a, "player_b": m.player_b, "kind": m.kind, "status": m.status, "worker_id": m.worker_id, "winner_id": m.winner_id, "points_a": m.points_a, "points_b": m.points_b, "detail": json.loads(m.detail) if m.detail else None}
+        team_a, team_b = db.get(Player, m.player_a), db.get(Player, m.player_b)
+        return {"id": m.id, "player_a": m.player_a, "player_b": m.player_b,
+                "team_a": team_a.name if team_a else "Đội A", "team_b": team_b.name if team_b else "Đội B",
+                "event_day": m.event_day, "kind": m.kind, "status": m.status, "worker_id": m.worker_id,
+                "winner_id": m.winner_id, "points_a": m.points_a, "points_b": m.points_b,
+                "initial_pieces": new_game()["pieces"],
+                "detail": json.loads(m.detail) if m.detail else None}
 
 @app.get("/api/leaderboard")
 def leaderboard(day: str | None = None):

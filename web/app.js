@@ -121,6 +121,159 @@ $("#leaderboardSeason").addEventListener("click", () => setLeaderboardMode("seas
 $("#leaderboardDaily").addEventListener("click", () => setLeaderboardMode("daily"));
 $("#leaderboardDay").addEventListener("change", refreshLeaderboard);
 
+const replayDialog = $("#replayDialog");
+let replayItems = [];
+let replayHasMore = false;
+let replayMatch = null;
+let replayFrames = [];
+let replayIndex = 0;
+let replayTimer = null;
+let replaySelectionId = 0;
+const replaySymbols = { rock: "✊", scissors: "✌️", paper: "✋" };
+const replayReasons = {
+  goal: "Đưa quân tới ô đích", elimination: "Ăn hết một loại quân đối thủ",
+  invalid_move_or_timeout: "Đối thủ đi sai hoặc quá giờ",
+  threefold_repetition_draw: "Lặp thế cờ ba lần",
+  no_legal_moves_draw: "Không còn nước đi hợp lệ", move_limit_draw: "Đủ giới hạn nước đi",
+};
+
+function stopReplay() {
+  if (replayTimer) clearInterval(replayTimer);
+  replayTimer = null;
+  $("#replayPlay").textContent = "▶ Phát";
+  $("#replayPlay").setAttribute("aria-label", "Phát trận");
+}
+
+function renderReplayList() {
+  $("#replayList").innerHTML = replayItems.map((item) => {
+    const outcome = item.winner ? `Thắng: ${escapeHtml(item.winner)}` : "Hòa";
+    return `<button class="replay-list-item${replayMatch?.id === item.id ? " active" : ""}" type="button" data-replay-id="${item.id}"><span class="replay-list-title">#${item.id} · ${escapeHtml(item.team_a)} vs ${escapeHtml(item.team_b)}</span><span class="replay-list-meta">${escapeHtml(item.event_day || "")} · ${item.move_count} nước · ${outcome}</span></button>`;
+  }).join("");
+  $("#moreReplays").classList.toggle("hidden", !replayHasMore);
+}
+
+async function loadReplays(append = false) {
+  if (!append) {
+    replayItems = [];
+    $("#replayList").innerHTML = '<p class="replay-list-message">Đang tải các trận...</p>';
+  }
+  try {
+    const page = await request(`/api/replays?offset=${replayItems.length}&limit=30`);
+    replayItems.push(...page.items);
+    replayHasMore = page.has_more;
+    renderReplayList();
+    if (!replayItems.length) $("#replayList").innerHTML = '<p class="replay-list-message">Chưa có trận hoàn tất. Khi bot đấu xong, trận sẽ xuất hiện ở đây.</p>';
+  } catch {
+    $("#replayList").innerHTML = '<p class="replay-list-message">Không tải được danh sách trận. Hãy thử lại.</p>';
+  }
+}
+
+function makeReplayFrames(match) {
+  const initial = match.initial_pieces.map((piece) => ({ ...piece }));
+  const frames = [initial];
+  for (const turn of match.detail.turns) {
+    const pieces = frames.at(-1).map((piece) => ({ ...piece }));
+    if (turn.piece_id && turn.to) {
+      const moving = pieces.find((piece) => piece.id === turn.piece_id);
+      if (moving) {
+        const captureIndex = pieces.findIndex((piece) => piece.id === turn.capture);
+        if (captureIndex >= 0) pieces.splice(captureIndex, 1);
+        moving.x = turn.to.charCodeAt(0) - 97;
+        moving.y = Number(turn.to.slice(1)) - 1;
+      }
+    }
+    frames.push(pieces);
+  }
+  return frames;
+}
+
+function paintReplay() {
+  const lastTurn = replayIndex ? replayMatch?.detail.turns[replayIndex - 1] : null;
+  const board = $("#replayBoard");
+  const pieces = new Map((replayFrames[replayIndex] || []).map((piece) => [`${piece.x},${piece.y}`, piece]));
+  const cells = [];
+  for (let y = 8; y >= 0; y--) {
+    for (let x = 0; x < 9; x++) {
+      const squareName = `${String.fromCharCode(97 + x)}${y + 1}`;
+      const piece = pieces.get(`${x},${y}`);
+      const classes = ["replay-cell", (x + y) % 2 ? "dark" : "light"];
+      if (squareName === "a1") classes.push("north-goal");
+      if (squareName === "i9") classes.push("south-goal");
+      if (lastTurn?.from === squareName) classes.push("last-from");
+      if (lastTurn?.to === squareName) classes.push("last-to");
+      cells.push(`<div class="${classes.join(" ")}" aria-label="${squareName}${piece ? ` ${piece.side === "south" ? "Xanh" : "Hồng"} ${piece.type}` : ""}"><small>${squareName}</small>${piece ? `<span class="replay-piece ${piece.side}" title="${piece.id} · ${piece.type}">${replaySymbols[piece.type] || "?"}</span>` : ""}</div>`);
+    }
+  }
+  board.innerHTML = cells.join("");
+  $("#replayCounter").textContent = `${replayIndex} / ${Math.max(0, replayFrames.length - 1)}`;
+  const team = lastTurn?.side === "south" ? replayMatch.team_a : replayMatch?.team_b;
+  const action = lastTurn?.error ? "đi sai hoặc quá giờ" : lastTurn ? `${lastTurn.piece_id} → ${lastTurn.to}${lastTurn.capture ? `, ăn ${lastTurn.capture}` : ""}` : "Bàn cờ ban đầu";
+  const ending = replayIndex === replayFrames.length - 1 && replayIndex > 0 ? ` · ${replayReasons[replayMatch.detail.win_reason] || replayMatch.detail.win_reason || "Kết thúc"}` : "";
+  $("#replayMove").textContent = lastTurn ? `Nước ${replayIndex}: ${team} ${action}${ending}` : action;
+  $("#replayFirst").disabled = $("#replayPrev").disabled = replayIndex === 0;
+  $("#replayNext").disabled = $("#replayLast").disabled = replayIndex >= replayFrames.length - 1;
+  $("#replayPlay").disabled = replayFrames.length <= 1;
+}
+
+async function selectReplay(matchId) {
+  const selectionId = ++replaySelectionId;
+  stopReplay();
+  $("#replayMove").textContent = "Đang tải diễn biến trận...";
+  try {
+    const match = await request(`/api/matches/${matchId}`);
+    if (selectionId !== replaySelectionId) return;
+    if (match.status !== "done" || !Array.isArray(match.detail?.turns)) throw new Error("Trận chưa có dữ liệu phát lại.");
+    replayMatch = match;
+    replayFrames = makeReplayFrames(match);
+    replayIndex = 0;
+    $("#replaySouth").textContent = match.team_a;
+    $("#replayNorth").textContent = match.team_b;
+    $("#replayResult").textContent = match.winner_id === null ? "Hòa" : `Thắng: ${match.winner_id === match.player_a ? match.team_a : match.team_b}`;
+    renderReplayList();
+    paintReplay();
+  } catch (error) {
+    if (selectionId === replaySelectionId) $("#replayMove").textContent = error.message;
+  }
+}
+
+async function openReplay(matchId = null) {
+  if (!replayDialog.open) replayDialog.showModal();
+  stopReplay();
+  await loadReplays();
+  if (matchId) selectReplay(matchId);
+  else if (replayItems.length) selectReplay(replayItems[0].id);
+}
+
+$$('[data-open-replay]').forEach((button) => button.addEventListener("click", () => openReplay()));
+$("#closeReplay").addEventListener("click", () => replayDialog.close());
+replayDialog.addEventListener("close", stopReplay);
+replayDialog.addEventListener("click", (event) => {
+  if (event.target === event.currentTarget) replayDialog.close();
+});
+$("#replayList").addEventListener("click", (event) => {
+  const item = event.target.closest("[data-replay-id]");
+  if (item) selectReplay(Number(item.dataset.replayId));
+});
+$("#moreReplays").addEventListener("click", () => loadReplays(true));
+$("#refreshReplays").addEventListener("click", () => loadReplays());
+$("#replayFirst").addEventListener("click", () => { stopReplay(); replayIndex = 0; paintReplay(); });
+$("#replayPrev").addEventListener("click", () => { stopReplay(); replayIndex = Math.max(0, replayIndex - 1); paintReplay(); });
+$("#replayNext").addEventListener("click", () => { stopReplay(); replayIndex = Math.min(replayFrames.length - 1, replayIndex + 1); paintReplay(); });
+$("#replayLast").addEventListener("click", () => { stopReplay(); replayIndex = replayFrames.length - 1; paintReplay(); });
+$("#replayPlay").addEventListener("click", () => {
+  if (replayTimer) { stopReplay(); return; }
+  if (!replayFrames.length) return;
+  if (replayIndex >= replayFrames.length - 1) replayIndex = 0;
+  $("#replayPlay").textContent = "Ⅱ Tạm dừng";
+  $("#replayPlay").setAttribute("aria-label", "Tạm dừng phát trận");
+  replayTimer = setInterval(() => {
+    if (replayIndex >= replayFrames.length - 1) { stopReplay(); return; }
+    replayIndex += 1;
+    paintReplay();
+    if (replayIndex >= replayFrames.length - 1) stopReplay();
+  }, 900);
+});
+
 $$(".tab").forEach((tab) => tab.addEventListener("click", () => activateTab(tab.dataset.tab)));
 
 $("#registerForm").addEventListener("submit", async (event) => {
@@ -187,12 +340,17 @@ async function refreshDashboard() {
     const [subs, matches] = await Promise.all([request("/api/submissions"), request("/api/my/matches")]);
     $("#submissionsBody").innerHTML = subs.map((s) => `<tr><td><strong>#${s.id}</strong></td><td>${s.language === "cpp" ? "C++17" : "Python"}</td><td>${dateText(s.created_at)}</td><td><span class="pill ${s.status}">${statusText[s.status] || s.status}</span>${s.compile_error ? `<small class="row-error" title="Lỗi biên dịch">${escapeHtml(s.compile_error)}</small>` : ""}</td></tr>`).join("");
     $("#submissionEmpty").classList.toggle("hidden", subs.length > 0);
-    $("#matchesBody").innerHTML = matches.map((m) => `<tr><td><strong>#${m.id}</strong><small class="row-sub">${escapeHtml(m.event_day || "")}</small></td><td>${escapeHtml(m.opponent)}</td><td><span class="pill ${m.result}">${({ win: "Thắng", loss: "Thua", draw: "Hòa", pending: "Đang chờ" })[m.result] || m.status}</span></td><td>${Number(m.points).toLocaleString("vi-VN")}</td></tr>`).join("");
+    $("#matchesBody").innerHTML = matches.map((m) => `<tr><td><strong>#${m.id}</strong><small class="row-sub">${escapeHtml(m.event_day || "")}</small></td><td>${escapeHtml(m.opponent)}</td><td><span class="pill ${m.result}">${({ win: "Thắng", loss: "Thua", draw: "Hòa", pending: "Đang chờ" })[m.result] || m.status}</span>${m.status === "done" ? `<button class="match-replay-link" type="button" data-replay-id="${m.id}">Xem lại trận ↗</button>` : ""}</td><td>${Number(m.points).toLocaleString("vi-VN")}</td></tr>`).join("");
     $("#matchesEmpty").classList.toggle("hidden", matches.length > 0);
   } catch (error) {
     if (/token|401/i.test(error.message)) { sessionStorage.removeItem(tokenKey); paintSession(); }
   }
 }
+
+$("#matchesBody").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-replay-id]");
+  if (button) openReplay(Number(button.dataset.replayId));
+});
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);

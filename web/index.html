@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/app.css?v=8">
+  <link rel="stylesheet" href="/assets/app.css?v=9">
   <link rel="stylesheet" href="/assets/status.css?v=4">
 </head>
 <body>
@@ -18,7 +18,7 @@
       <span>Oẳn Tù Tì chiến thuật · Thi đấu bằng lập trình</span>
     </a>
     <nav aria-label="Điều hướng chính">
-      <button class="nav-link" type="button" data-open-rules>Thể lệ dự thi</button><a href="#thi-dau">Thi đấu</a><button class="nav-link" type="button" data-open-leaderboard>Bảng xếp hạng</button>
+      <button class="nav-link" type="button" data-open-rules>Thể lệ dự thi</button><a href="#thi-dau">Thi đấu</a><button class="nav-link" type="button" data-open-replay>Xem trận</button><button class="nav-link" type="button" data-open-leaderboard>Bảng xếp hạng</button>
     </nav>
     <div class="account-actions">
       <button id="navLogin" class="button button-outline button-small" type="button">Đăng nhập</button>
@@ -102,6 +102,19 @@
     <p id="leaderboardPeriod" class="leaderboard-period">Tổng điểm từ đầu cuộc thi.</p>
     <div class="panel table-panel leaderboard-panel"><div class="table-scroll"><table><thead><tr><th>Hạng</th><th>Đội</th><th>Số trận</th><th>Trận thắng</th><th>Điểm</th></tr></thead><tbody id="leaderboardBody"></tbody></table></div><div id="leaderboardEmpty" class="table-empty hidden">Bảng xếp hạng chưa có dữ liệu.</div></div>
   </dialog>
+  <dialog id="replayDialog" class="replay-dialog" aria-labelledby="replayTitle">
+    <div class="dialog-heading"><div><div class="eyebrow">OTTv2 · PHÁT LẠI TRẬN ĐẤU</div><h2 id="replayTitle">Xem bot thi đấu</h2></div><button id="closeReplay" class="dialog-close" type="button" aria-label="Đóng phát lại">×</button></div>
+    <p class="replay-intro">Chọn một trận đã kết thúc để xem lại từng nước đi của hai bot.</p>
+    <div class="replay-layout">
+      <section class="replay-stage" aria-label="Bàn cờ phát lại">
+        <div class="replay-score"><div class="replay-team"><span class="replay-team-dot south"></span><span id="replaySouth">Đội Xanh</span></div><span id="replayResult">Chọn một trận</span><div class="replay-team"><span class="replay-team-dot north"></span><span id="replayNorth">Đội Hồng</span></div></div>
+        <div class="replay-board-wrap"><div id="replayBoard" class="replay-board" role="img" aria-label="Bàn cờ 9 nhân 9"></div></div>
+        <div class="replay-controls"><button id="replayFirst" type="button" aria-label="Về đầu trận" disabled>⏮</button><button id="replayPrev" type="button" aria-label="Nước trước" disabled>◀</button><button id="replayPlay" class="replay-play" type="button" aria-label="Phát trận" disabled>▶ Phát</button><button id="replayNext" type="button" aria-label="Nước tiếp" disabled>▶</button><button id="replayLast" type="button" aria-label="Đến cuối trận" disabled>⏭</button><span id="replayCounter">0 / 0</span></div>
+        <p id="replayMove" class="replay-move" aria-live="polite">Chọn trận bên phải để bắt đầu.</p>
+      </section>
+      <aside class="replay-sidebar"><div class="replay-sidebar-heading"><h3>Trận đã hoàn tất</h3><button id="refreshReplays" type="button" aria-label="Làm mới danh sách trận">↻</button></div><div id="replayList" class="replay-list"></div><button id="moreReplays" class="button button-outline full hidden" type="button">Xem thêm trận</button></aside>
+    </div>
+  </dialog>
   <dialog id="rulesDialog" class="rules-dialog" aria-labelledby="rulesTitle">
     <div class="dialog-heading"><div><div class="eyebrow">OTTv2 · THỂ LỆ DỰ THI</div><h2 id="rulesTitle">Hướng dẫn dành cho các đội</h2></div><button id="closeRules" class="dialog-close" type="button" aria-label="Đóng thể lệ">×</button></div>
     <p class="rules-intro">Mỗi đội tạo một tài khoản, viết bot bằng C++17 hoặc Python 3 rồi nộp mã nguồn trên website. Bot của hai đội sẽ tự thi đấu theo luật OTTv2 khi ban tổ chức mở lịch trận.</p>
@@ -140,6 +153,6 @@
     </div>
     <div id="signedIn" class="signed-in hidden"><div class="signed-avatar">♟</div><div class="signed-copy"><span class="eyebrow">ĐỘI ĐANG ĐĂNG NHẬP</span><h3 id="teamName">—</h3><button id="logoutBtn" class="text-button" type="button">Đăng xuất</button></div></div>
   </dialog>
-  <script src="/assets/app.js?v=7" defer></script>
+  <script src="/assets/app.js?v=8" defer></script>
 </body>
 </html>
