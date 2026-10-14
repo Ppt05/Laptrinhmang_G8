@@ -260,7 +260,7 @@ def main():
             now = datetime.now(tz)
             with SessionLocal() as db:
                 state = get_event_state(db, os.getenv("MATCHES_ENABLED", "false").lower() == "true", now)
-            start_time = datetime.fromisoformat(state["start_at"]).time() if state["start_at"] else None
+            start_time = datetime.fromisoformat(state["start_at"]).time().replace(tzinfo=None) if state["start_at"] else None
             if (os.getenv("AUTO_PAIR_ENABLED", "true").lower() == "true" and state["matches_enabled"]
                     and start_time and now.time() >= start_time and last_pair_day != now.date().isoformat()):
                 try:
