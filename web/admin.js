@@ -78,7 +78,7 @@ async function loadAssignments(silent = false) {
       [
         `#${match.id}`,
         `${match.team_a} — ${match.team_b}`,
-        match.worker_id || "Đang chờ",
+        match.worker_id || (match.status === "queued" ? "Đang chờ" : "Chưa ghi"),
         states[match.status] || match.status,
         match.status === "done" ? (match.winner || "Hòa") : "—",
       ].forEach((value) => { row.insertCell().textContent = value; });
