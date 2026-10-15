@@ -10,6 +10,8 @@
 | Trang ban tổ chức | [oantuti-demo.onrender.com/admin](https://oantuti-demo.onrender.com/admin) |
 | Repository | [Ppt05/Laptrinhmang_G8](https://github.com/Ppt05/Laptrinhmang_G8) |
 
+**Đăng nhập trang ban tổ chức:** tên đăng nhập `admin`. Thành viên nhóm nhận mật khẩu từ trưởng nhóm qua kênh riêng để xem lịch, worker, kết quả và quản lý lịch thi đấu.
+
 Trang quản trị **đặt giờ mở/đóng, xem worker và kết quả**. Quản trị viên không chọn thủ công đội nào gặp đội nào hoặc trận chạy trên máy nào. Dự án hiện triển khai website/API và PostgreSQL trên Render; chương trình chấm trận (**worker**) chạy trên máy của ban tổ chức có Docker Desktop. Không có frontend Vercel, Redis, Judge0 hoặc Piston trong cấu hình hiện tại.
 
 ## Hệ thống hoạt động thế nào?
@@ -119,7 +121,7 @@ Mở [website local](http://localhost:8000/) và [admin local](http://localhost:
 Repository đã có `render.yaml` cho Web Service và PostgreSQL. Với hệ thống đang chạy ở link đầu README, **không cần tạo thêm Render service**. Kiểm tra trong Render Web Service:
 
 - `DATABASE_URL`: kết nối tới PostgreSQL của dự án; Render Blueprint cấu hình biến này.
-- `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_API_KEY`: tài khoản và khóa admin; đặt/lưu giá trị riêng trong Render Environment, **không ghi mật khẩu vào README hay GitHub**.
+- `ADMIN_USERNAME=admin`, `ADMIN_PASSWORD`: thông tin đăng nhập trang ban tổ chức. Đặt mật khẩu trong Render Environment và chia cho thành viên nhóm qua kênh riêng. `ADMIN_API_KEY` là khóa API quản trị và khóa ký phiên đăng nhập, phải giữ riêng trong Render Environment.
 - `MATCHES_ENABLED=true`: cho API nhận trạng thái thi đấu theo lịch. `render.yaml` mặc định đặt `false` khi tạo mới, nên phải kiểm tra giá trị thực tế trên Render.
 - `REGISTRATION_OPEN=true`: cho phép đội đăng ký.
 
@@ -171,7 +173,7 @@ Khi **một trận đã kết thúc sai vì lỗi hạ tầng**, admin có nút 
 
 ## Lưu ý về bí mật và phạm vi hiện tại
 
-- Không commit `.env`, `.env.worker`, URL PostgreSQL, mật khẩu admin hoặc token đội. Hai file môi trường thật đã nằm trong `.gitignore`. Không đặt mật khẩu admin công khai trong README, kể cả để bạn cùng nhóm cài máy.
+- Không commit `.env`, `.env.worker`, URL PostgreSQL, mật khẩu admin, `ADMIN_API_KEY` hoặc token đội. Hai file môi trường thật đã nằm trong `.gitignore`. Tài khoản admin có quyền thay đổi lịch và hủy điểm trận, nên chỉ cấp mật khẩu cho người phụ trách.
 - Worker có quyền truy cập Docker socket trên máy chạy nó; chỉ cài trên máy đáng tin cậy của ban tổ chức.
 - Website có API `/api/challenges` cho thách đấu trực tiếp trong giờ mở thi. Giao diện hiện tập trung vào lượt **ghép ngẫu nhiên theo ngày**; trận thách đấu nếu được tạo cũng được tính vào bảng điểm. Không có chế độ “đấu thử không tính điểm”.
 - Tài liệu này mô tả code trong repository. Trước ngày thi, kiểm tra commit đang Live trên Render và phiên bản worker của từng máy vì hai phần được triển khai riêng.
