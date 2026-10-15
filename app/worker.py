@@ -287,7 +287,16 @@ def main():
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     ensure_schema()
     instance_token = secrets.token_hex(16)
-    register_worker(instance_token)
+    # On a normal container restart the previous heartbeat can remain fresh
+    # briefly. Wait for it to expire while still rejecting a truly duplicate ID.
+    for attempt in range(8):
+        try:
+            register_worker(instance_token)
+            break
+        except RuntimeError:
+            if attempt == 7:
+                raise
+            time.sleep(5)
     stop_event = threading.Event()
     threading.Thread(target=heartbeat_loop, args=(instance_token, stop_event), daemon=True).start()
     tz = ZoneInfo(os.getenv("EVENT_TIMEZONE", "Asia/Ho_Chi_Minh"))
