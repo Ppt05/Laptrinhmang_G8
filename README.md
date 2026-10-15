@@ -30,7 +30,7 @@ flowchart LR
 
 1. **Đăng ký và nộp bài.** API lưu tài khoản và mã nguồn vào PostgreSQL, rồi thêm một job biên dịch vào bảng `jobs`. Một đội được nộp **một lần mỗi ngày theo giờ Việt Nam**, kể cả khi mã không biên dịch được. Giới hạn mỗi bài là **100 KB**.
 2. **Biên dịch.** Worker rảnh lấy job từ PostgreSQL, dùng Docker sandbox để kiểm tra/biên dịch. Bài thành công có trạng thái `ready`; bài lỗi có trạng thái `failed` và hiện thông báo lỗi trong tài khoản đội.
-3. **Ghép trận tự động.** Khi lịch thi đang mở và qua giờ bắt đầu trong ngày, worker đợi các bài đã nộp hôm nay biên dịch xong, rồi chỉ lấy bài `ready` **đã nộp trong chính ngày đó theo giờ Việt Nam**. Worker xáo trộn các đội hợp lệ và ghép từng cặp. Mỗi ngày chỉ tạo **một lượt ghép tự động**; đội lẻ hoặc đội không nộp trong ngày nghỉ lượt và không được cộng điểm. Nếu chưa đủ hai bot hợp lệ, worker tiếp tục chờ. Khi lượt ghép đã tạo, hệ thống khóa nộp bài đến ngày sau. Đội đã có trận tính điểm trong ngày, kể cả thách đấu hoặc đấu lại, không được ghép thêm. Bài `ready` từ hôm trước không được dùng cho lượt ghép mới; mã nguồn cũ vẫn lưu để xem lịch sử trận đã tạo.
+3. **Ghép trận tự động.** Khi lịch thi đang mở và qua giờ bắt đầu trong ngày, worker đợi các bài đang biên dịch xong, rồi chỉ lấy bài `ready` **đã nộp trong chính ngày đó theo giờ Việt Nam**. Worker xáo trộn các đội hợp lệ và ghép từng cặp. Đội lẻ tiếp tục đợi đội mới nộp trong ngày; khi có thêm hai bot hợp lệ, worker ghép tiếp mà không ghép lại đội đã đấu. Mỗi đội chỉ được nộp một lần và đấu tối đa một trận tính điểm trong ngày, kể cả thách đấu hoặc đấu lại. Đội không nộp trong ngày không được ghép; bài `ready` từ hôm trước chỉ lưu cho lịch sử trận đã tạo. Nếu lịch kết thúc đúng giờ ghép của ngày cuối, worker vẫn xử lý các bài đã nộp trước giờ đóng; bài nộp sau giờ đóng không được đưa vào lượt cuối.
 4. **Chạy trận.** Mỗi trận là một job chung. Worker nào rảnh thì nhận trước; không chia cố định đội theo máy. Worker chạy hai bot trong hai Docker sandbox, gửi trạng thái bàn cờ cho bot theo từng lượt, kiểm tra nước đi, tính thắng/hòa/thua và ghi diễn biến vào PostgreSQL.
 5. **Công bố kết quả.** Website đọc dữ liệu đã lưu để hiện lịch sử đấu, bảng xếp hạng theo toàn mùa hoặc ngày ghép trận và cửa sổ **Xem trận**. Phần xem trận dựng lại bàn cờ từ danh sách nước đi, **không phải video lấy từ Docker và không truyền trực tiếp trận đang chạy**.
 
@@ -41,7 +41,7 @@ Một worker có thể xử lý toàn bộ hàng đợi, lần lượt từng jo
 ### Ví dụ một ngày thi
 
 - Admin đặt lịch từ 20:40 ngày 14/10 đến 20:40 ngày 22/10 (giờ Việt Nam) và bật thi đấu.
-- Hai đội nộp bot trong ngày và có trạng thái `ready`. Sau 20:40 mỗi ngày trong khoảng lịch, worker tạo cặp ngẫu nhiên. Nếu worker bật muộn hơn giờ đó, nó tạo lượt khi kết nối lại, miễn là ngày ấy chưa từng tạo lượt ghép tự động.
+- Hai đội nộp bot trong ngày và có trạng thái `ready`. Sau 20:40 mỗi ngày trong khoảng lịch, worker tạo cặp ngẫu nhiên. Đội đến sau vẫn được ghép khi đủ thêm hai bot hợp lệ và lịch còn mở. Nếu worker bật muộn hơn giờ đó, nó ghép các đội chưa đấu khi kết nối lại.
 - Trận hoàn tất được cộng điểm và xuất hiện trong **Xem trận**. Trận phát sinh từ API thách đấu (nếu sử dụng) cũng tính điểm và chiếm lượt thi trong ngày; hệ thống hiện **không có chế độ luyện tập riêng**.
 
 ## Đội thi cần làm gì?

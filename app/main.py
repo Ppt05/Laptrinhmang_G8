@@ -273,14 +273,15 @@ def submit(body: Submit, player_id: int = Depends(authorized_player)):
         db.scalar(select(Player).where(Player.id == player_id).with_for_update())
         local_day = datetime.now(VN).date()
         day_start, day_end = submission_day_bounds(local_day)
+        control = db.get(EventControl, 1)
+        if control and control.enabled and control.end_at and datetime.now(VN) >= as_vietnam_time(datetime.fromisoformat(control.end_at)):
+            raise HTTPException(409, "Lịch thi đã kết thúc; không thể nộp bot sau giờ đóng")
         already_submitted = db.scalar(select(Submission.id).where(
             Submission.player_id == player_id,
             Submission.created_at >= day_start,
             Submission.created_at < day_end))
         if already_submitted:
             raise HTTPException(429, "Mỗi đội chỉ được nộp một phiên bản mã nguồn mỗi ngày (giờ Việt Nam)")
-        if db.scalar(select(Match.id).where(Match.event_day == local_day.isoformat(), Match.kind == "daily")):
-            raise HTTPException(409, "Lượt ghép hôm nay đã chốt; hãy nộp bot mới vào ngày mai")
         if match_for_teams_on_day(db, (player_id,), local_day.isoformat()):
             raise HTTPException(409, "Đội đã có trận hôm nay; hãy nộp bot mới vào ngày mai")
         s = Submission(player_id=player_id, language=lang, source=body.source); db.add(s); db.flush()

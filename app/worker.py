@@ -324,7 +324,8 @@ def main():
     stop_event = threading.Event()
     threading.Thread(target=heartbeat_loop, args=(instance_token, stop_event), daemon=True).start()
     tz = ZoneInfo(os.getenv("EVENT_TIMEZONE", "Asia/Ho_Chi_Minh"))
-    last_pair_day = None
+    next_pair_check = 0.0
+    completed_final_deadline = None
     last_recovery = 0.0
     pending_release = None
     while not stop_event.is_set():
@@ -338,13 +339,25 @@ def main():
             with SessionLocal() as db:
                 state = get_event_state(db, os.getenv("MATCHES_ENABLED", "false").lower() == "true", now)
             start_time = datetime.fromisoformat(state["start_at"]).time().replace(tzinfo=None) if state["start_at"] else None
-            if (os.getenv("AUTO_PAIR_ENABLED", "true").lower() == "true" and state["matches_enabled"]
-                    and start_time and now.time() >= start_time and last_pair_day != now.date().isoformat()):
+            end_at = datetime.fromisoformat(state["end_at"]) if state["end_at"] else None
+            normal_pairing = bool(state["matches_enabled"] and start_time and now.time() >= start_time)
+            # On the final day the window can close at exactly the pairing time.
+            # Finish pairing submissions made before the deadline even if the
+            # worker polls (or reconnects) after that instant.
+            final_pairing = bool(state["enabled"] and state["worker_enabled"] and end_at
+                                 and start_time and end_at.time().replace(tzinfo=None) >= start_time
+                                 and now >= end_at and end_at != completed_final_deadline)
+            if (os.getenv("AUTO_PAIR_ENABLED", "true").lower() == "true"
+                    and (normal_pairing or final_pairing) and time.monotonic() >= next_pair_check):
+                next_pair_check = time.monotonic() + 3
                 try:
-                    if create_daily_pairings(now.date().isoformat()):
-                        last_pair_day = now.date().isoformat()
+                    pair_day = end_at.date().isoformat() if final_pairing else now.date().isoformat()
+                    cutoff = end_at.astimezone(timezone.utc) if final_pairing else None
+                    finished = create_daily_pairings(pair_day, cutoff=cutoff)
+                    if final_pairing and finished:
+                        completed_final_deadline = end_at
                 except Exception:
-                    # Retry next loop; the database check makes pairing idempotent.
+                    # Retry later; the database lock keeps concurrent workers idempotent.
                     time.sleep(2)
             if time.monotonic() - last_recovery >= 10:
                 with SessionLocal.begin() as db:
@@ -362,13 +375,13 @@ def main():
             engine.dispose()
             time.sleep(3)
 
-def create_daily_pairings(day):
+def create_daily_pairings(day, cutoff=None):
     import random
     day_start, day_end = submission_day_bounds(date.fromisoformat(day))
+    if cutoff is not None:
+        day_end = min(day_end, cutoff)
     with SessionLocal.begin() as db:
         db.execute(text("SELECT pg_advisory_xact_lock(74620146)"))
-        if db.scalar(select(Match.id).where(Match.event_day == day, Match.kind == "daily")):
-            return True
         # Let every source submitted before pairing finish compilation first.
         if db.scalar(select(Submission.id).where(
             Submission.created_at >= day_start,
@@ -389,10 +402,11 @@ def create_daily_pairings(day):
             Match.event_day == day, Match.status != "void",
         )):
             already_matched.update((player_a, player_b))
+        # Existing pairs are excluded, but unmatched teams can join later today.
         eligible = [(pid, sid) for pid, sid in newest.items() if pid not in already_matched]
         random.SystemRandom().shuffle(eligible)
         if len(eligible) < 2:
-            return False
+            return True
         for (pa, sa), (pb, sb) in zip(eligible[::2], eligible[1::2]):
             m = Match(player_a=pa, player_b=pb, submission_a=sa, submission_b=sb, event_day=day, kind="daily")
             db.add(m); db.flush(); db.add(Job(kind="match", payload=json.dumps({"match_id": m.id})))
