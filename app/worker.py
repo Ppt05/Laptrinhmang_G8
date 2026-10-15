@@ -120,6 +120,7 @@ def play_match(db: Session, m: Match):
     try:
         max_moves = int(os.getenv("MATCH_MAX_MOVES", "200"))
         timeout = float(os.getenv("MATCH_MOVE_TIMEOUT_SECONDS", "1.5"))
+        first_move_timeout = float(os.getenv("MATCH_FIRST_MOVE_TIMEOUT_SECONDS", "15"))
         repetitions = {position_key(game): 1}
         while not game["winner"] and game["move_number"] <= max_moves:
             side = game["turn"]
@@ -131,7 +132,8 @@ def play_match(db: Session, m: Match):
             payload = {"protocol_version": 2, "move_number": game["move_number"], "side": side,
                        "board_size": 9, "pieces": game["pieces"], "legal_moves": choices}
             player_proc.stdin.write((json.dumps(payload, separators=(",", ":")) + "\n").encode()); player_proc.stdin.flush()
-            raw = read_line_timeout(player_proc.stdout, timeout)
+            # Each bot's first turn also includes Docker/Python startup time.
+            raw = read_line_timeout(player_proc.stdout, first_move_timeout if game["move_number"] <= 2 else timeout)
             try:
                 reply = json.loads(raw.decode("utf-8")) if raw else None
                 selected = next((mv for mv in choices if mv["piece_id"] == reply.get("piece_id") and mv["to"] == reply.get("to")), None) if isinstance(reply, dict) else None

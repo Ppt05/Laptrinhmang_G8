@@ -146,7 +146,7 @@ Bấm **Bảng xếp hạng** trên thanh điều hướng để mở cửa sổ
 {"piece_id":"S01","to":"a4"}
 ```
 
-Không in nội dung gỡ lỗi ra `stdout`; chỉ ghi vào `stderr`. Mỗi lượt có tối đa **1,5 giây**. Nước đi sai định dạng, không nằm trong `legal_moves` hoặc trả lời quá giờ sẽ khiến bot thua trận. Xem thư mục [`examples/`](examples/) để bắt đầu viết bot.
+Không in nội dung gỡ lỗi ra `stdout`; chỉ ghi vào `stderr`. Mỗi lượt có tối đa **1,5 giây** để tính nước đi; lượt đầu của mỗi bot được **15 giây** để khởi động Docker và Python. Nước đi sai định dạng, không nằm trong `legal_moves` hoặc trả lời quá giờ sẽ khiến bot thua trận. Xem thư mục [`examples/`](examples/) để bắt đầu viết bot.
 
 ### Luật bàn cờ OTTv2
 

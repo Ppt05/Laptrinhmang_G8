@@ -55,13 +55,25 @@ def compile_bot(language):
 
 def run_bot(language):
     path = pathlib.Path("/tmp/program")
-    header = sys.stdin.buffer.read(4)
+    # Read only the requested bytes. Buffered reads can prefetch the first
+    # game-state line and keep it away from the child bot process.
+    def read_exact(size):
+        chunks = []
+        while size:
+            chunk = os.read(0, size)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            size -= len(chunk)
+        return b"".join(chunks)
+
+    header = read_exact(4)
     if len(header) != 4:
         return 70
     size = int.from_bytes(header, "big")
     if size < 1 or size > 5_000_000:
         return 70
-    artifact = sys.stdin.buffer.read(size)
+    artifact = read_exact(size)
     if len(artifact) != size:
         return 70
     path.write_bytes(artifact)
@@ -73,7 +85,7 @@ def run_bot(language):
     else:
         return 64
     try:
-        proc = subprocess.Popen(command, stdin=sys.stdin.buffer, stdout=sys.stdout.buffer, stderr=subprocess.DEVNULL)
+        proc = subprocess.Popen(command, stdin=0, stdout=1, stderr=subprocess.DEVNULL)
         return proc.wait()
     except Exception:
         return 71
