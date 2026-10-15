@@ -126,13 +126,14 @@ let replayItems = [];
 let replayHasMore = false;
 let replayMatch = null;
 let replayFrames = [];
+let replayMoves = [];
 let replayIndex = 0;
 let replayTimer = null;
 let replaySelectionId = 0;
 const replaySymbols = { rock: "✊", scissors: "✌️", paper: "✋" };
 const replayReasons = {
   goal: "Đưa quân tới ô đích", elimination: "Ăn hết một loại quân đối thủ",
-  invalid_move_or_timeout: "Đối thủ đi sai hoặc quá giờ",
+  invalid_move_or_timeout: "Bot không trả về nước đi hợp lệ hoặc quá giờ",
   threefold_repetition_draw: "Lặp thế cờ ba lần",
   no_legal_moves_draw: "Không còn nước đi hợp lệ", move_limit_draw: "Đủ giới hạn nước đi",
 };
@@ -168,10 +169,10 @@ async function loadReplays(append = false) {
   }
 }
 
-function makeReplayFrames(match) {
+function makeReplayFrames(match, moves) {
   const initial = match.initial_pieces.map((piece) => ({ ...piece }));
   const frames = [initial];
-  for (const turn of match.detail.turns) {
+  for (const turn of moves) {
     const pieces = frames.at(-1).map((piece) => ({ ...piece }));
     if (turn.piece_id && turn.to) {
       const moving = pieces.find((piece) => piece.id === turn.piece_id);
@@ -188,7 +189,8 @@ function makeReplayFrames(match) {
 }
 
 function paintReplay() {
-  const lastTurn = replayIndex ? replayMatch?.detail.turns[replayIndex - 1] : null;
+  const lastTurn = replayIndex ? replayMoves[replayIndex - 1] : null;
+  const failedTurn = replayMatch?.detail.turns.find((turn) => turn.error);
   const board = $("#replayBoard");
   const pieces = new Map((replayFrames[replayIndex] || []).map((piece) => [`${piece.x},${piece.y}`, piece]));
   const cells = [];
@@ -207,9 +209,14 @@ function paintReplay() {
   board.innerHTML = cells.join("");
   $("#replayCounter").textContent = `${replayIndex} / ${Math.max(0, replayFrames.length - 1)}`;
   const team = lastTurn?.side === "south" ? replayMatch.team_a : replayMatch?.team_b;
-  const action = lastTurn?.error ? "đi sai hoặc quá giờ" : lastTurn ? `${lastTurn.piece_id} → ${lastTurn.to}${lastTurn.capture ? `, ăn ${lastTurn.capture}` : ""}` : "Bàn cờ ban đầu";
-  const ending = replayIndex === replayFrames.length - 1 && replayIndex > 0 ? ` · ${replayReasons[replayMatch.detail.win_reason] || replayMatch.detail.win_reason || "Kết thúc"}` : "";
-  $("#replayMove").textContent = lastTurn ? `Nước ${replayIndex}: ${team} ${action}${ending}` : action;
+  const action = lastTurn ? `${lastTurn.piece_id} → ${lastTurn.to}${lastTurn.capture ? `, ăn ${lastTurn.capture}` : ""}` : "Bàn cờ ban đầu";
+  const atEnd = replayIndex === replayFrames.length - 1;
+  const failedTeam = failedTurn?.side === "south" ? replayMatch?.team_a : replayMatch?.team_b;
+  const failure = failedTurn && atEnd ? `${failedTeam} không trả về nước đi hợp lệ hoặc quá giờ.` : "";
+  const ending = atEnd && !failedTurn && replayIndex > 0 ? ` · ${replayReasons[replayMatch.detail.win_reason] || replayMatch.detail.win_reason || "Kết thúc"}` : "";
+  $("#replayMove").textContent = !replayMoves.length && failure
+    ? `Trận kết thúc trước nước đi đầu tiên. ${failure} Không có nước đi để phát lại.`
+    : lastTurn ? `Nước ${replayIndex}: ${team} ${action}${ending}${failure ? ` · Sau đó ${failure}` : ""}` : action;
   $("#replayFirst").disabled = $("#replayPrev").disabled = replayIndex === 0;
   $("#replayNext").disabled = $("#replayLast").disabled = replayIndex >= replayFrames.length - 1;
   $("#replayPlay").disabled = replayFrames.length <= 1;
@@ -224,7 +231,8 @@ async function selectReplay(matchId) {
     if (selectionId !== replaySelectionId) return;
     if (match.status !== "done" || !Array.isArray(match.detail?.turns)) throw new Error("Trận chưa có dữ liệu phát lại.");
     replayMatch = match;
-    replayFrames = makeReplayFrames(match);
+    replayMoves = match.detail.turns.filter((turn) => turn.piece_id && turn.to);
+    replayFrames = makeReplayFrames(match, replayMoves);
     replayIndex = 0;
     $("#replaySouth").textContent = match.team_a;
     $("#replayNorth").textContent = match.team_b;

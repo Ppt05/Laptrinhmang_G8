@@ -203,7 +203,8 @@ def my_matches(player_id: int = Depends(authorized_player)):
             detail = json.loads(m.detail) if m.detail else {}
             output.append({"id": m.id, "opponent": opponent.name if opponent else "Đội đối thủ", "kind": m.kind,
                            "event_day": m.event_day, "status": m.status, "result": result, "points": pts,
-                           "win_reason": detail.get("win_reason"), "move_count": len(detail.get("turns", []))})
+                           "win_reason": detail.get("win_reason"),
+                           "move_count": sum(1 for turn in detail.get("turns", []) if turn.get("piece_id") and turn.get("to"))})
         return output
 
 @app.post("/api/challenges")
@@ -242,7 +243,7 @@ def replays(offset: int = 0, limit: int = 30):
                           "team_b": names.get(m.player_b, "Đội B"),
                           "winner": names.get(m.winner_id) if m.winner_id else None,
                           "event_day": m.event_day, "kind": m.kind,
-                          "move_count": len(detail.get("turns", []))})
+                          "move_count": sum(1 for turn in detail.get("turns", []) if turn.get("piece_id") and turn.get("to"))})
         return {"items": items, "has_more": len(matches) > limit}
 
 @app.get("/api/matches/{match_id}")
