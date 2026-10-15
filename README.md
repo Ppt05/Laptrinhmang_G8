@@ -10,7 +10,7 @@
 | Trang ban tổ chức | [oantuti-demo.onrender.com/admin](https://oantuti-demo.onrender.com/admin) |
 | Repository | [Ppt05/Laptrinhmang_G8](https://github.com/Ppt05/Laptrinhmang_G8) |
 
-**Đăng nhập trang ban tổ chức:** tên đăng nhập `admin`. Trưởng nhóm lưu mật khẩu admin và Render External Database URL trong file `team-access.env` trên máy cá nhân, rồi gửi file riêng cho người cần vận hành worker. File này không nằm trong repository GitHub.
+**Đăng nhập trang ban tổ chức:** tên đăng nhập `admin`.  mật khẩu admin và Render External Database URL trong file `team-access.env` 
 
 Trang quản trị **đặt giờ mở/đóng, xem worker và kết quả**. Quản trị viên không chọn thủ công đội nào gặp đội nào hoặc trận chạy trên máy nào. Dự án hiện triển khai website/API và PostgreSQL trên Render; chương trình chấm trận (**worker**) chạy trên máy của ban tổ chức có Docker Desktop. Không có frontend Vercel, Redis, Judge0 hoặc Piston trong cấu hình hiện tại.
 
