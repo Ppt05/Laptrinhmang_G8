@@ -1,4 +1,6 @@
 .env
+.env.worker
+team-access.env
 .dockerignore
 .git
 data

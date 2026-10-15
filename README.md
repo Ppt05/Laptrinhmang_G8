@@ -10,7 +10,7 @@
 | Trang ban tổ chức | [oantuti-demo.onrender.com/admin](https://oantuti-demo.onrender.com/admin) |
 | Repository | [Ppt05/Laptrinhmang_G8](https://github.com/Ppt05/Laptrinhmang_G8) |
 
-**Đăng nhập trang ban tổ chức:** tên đăng nhập `admin`. Thành viên nhóm nhận mật khẩu từ trưởng nhóm qua kênh riêng để xem lịch, worker, kết quả và quản lý lịch thi đấu.
+**Đăng nhập trang ban tổ chức:** tên đăng nhập `admin`. Trưởng nhóm lưu mật khẩu admin và Render External Database URL trong file `team-access.env` trên máy cá nhân, rồi gửi file riêng cho người cần vận hành worker. File này không nằm trong repository GitHub.
 
 Trang quản trị **đặt giờ mở/đóng, xem worker và kết quả**. Quản trị viên không chọn thủ công đội nào gặp đội nào hoặc trận chạy trên máy nào. Dự án hiện triển khai website/API và PostgreSQL trên Render; chương trình chấm trận (**worker**) chạy trên máy của ban tổ chức có Docker Desktop. Không có frontend Vercel, Redis, Judge0 hoặc Piston trong cấu hình hiện tại.
 
@@ -136,6 +136,8 @@ notepad .env.worker
 
 Lấy **External Database URL** từ trang PostgreSQL trong Render Dashboard, dán vào `DATABASE_URL` trong `.env.worker` (máy cá nhân không dùng Internal URL). Đặt `MATCHES_ENABLED=true`, `AUTO_PAIR_ENABLED=true`. Máy thứ nhất dùng `WORKER_ID=may-1`, máy thứ hai dùng `may-2`, máy thứ ba dùng `may-3`; mỗi máy có **ID riêng** nhưng cùng URL database. File này chứa bí mật, chỉ lưu trên máy ban tổ chức.
 
+**Dùng file cấu hình do trưởng nhóm gửi riêng:** sau khi clone repo và nhận `team-access.env`, lưu file đó vào thư mục gốc repository rồi chạy `Copy-Item team-access.env .env.worker`. Trong `.env.worker`, sửa `WORKER_ID` thành ID riêng của máy này trước khi bật worker. File đã có `DATABASE_URL`, `ADMIN_USERNAME` và `ADMIN_PASSWORD`. Nếu máy đã có `.env.worker` đang chạy tốt, giữ file hiện tại và chỉ đối chiếu thông tin cần thiết; không chép đè. `git pull` không tải file `team-access.env`. Nếu Render đổi mật khẩu database hoặc admin, trưởng nhóm cần gửi file mới và mọi máy worker cần cập nhật URL.
+
 Mở Docker Desktop, chờ Engine sẵn sàng rồi chạy:
 
 ```powershell
@@ -173,7 +175,7 @@ Khi **một trận đã kết thúc sai vì lỗi hạ tầng**, admin phải nh
 
 ## Lưu ý về bí mật và phạm vi hiện tại
 
-- Không commit `.env`, `.env.worker`, URL PostgreSQL, mật khẩu admin, `ADMIN_API_KEY` hoặc token đội. Hai file môi trường thật đã nằm trong `.gitignore`. Tài khoản admin có quyền thay đổi lịch và hủy điểm trận, nên chỉ cấp mật khẩu cho người phụ trách.
+- `.env`, `.env.worker` và `team-access.env` được Git bỏ qua. Repository này đang Public; người có link đều đọc được file đã push và lịch sử Git. Tài khoản admin có quyền thay đổi lịch và hủy điểm trận, nên chỉ gửi file cấu hình cho người phụ trách.
 - Worker có quyền truy cập Docker socket trên máy chạy nó; chỉ cài trên máy đáng tin cậy của ban tổ chức.
 - Website có API `/api/challenges` cho thách đấu trực tiếp trong giờ mở thi. Cả hai đội phải có bài `ready` nộp hôm nay và chưa có trận nào khác trong ngày; trận thách đấu được tính vào bảng điểm. Giao diện hiện tập trung vào lượt **ghép ngẫu nhiên theo ngày**. Không có chế độ “đấu thử không tính điểm”.
 - Tài liệu này mô tả code trong repository. Trước ngày thi, kiểm tra commit đang Live trên Render và phiên bản worker của từng máy vì hai phần được triển khai riêng.
