@@ -70,15 +70,17 @@ async function loadAssignments(silent = false) {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "text-button";
-        button.textContent = "Hủy điểm, đấu lại";
+        button.textContent = match.can_replay ? "Hủy điểm, đấu lại" : "Hủy điểm";
         button.addEventListener("click", async () => {
           const reason = prompt(`Lý do lỗi hạ tầng của trận #${match.id} (tối thiểu 8 ký tự):`);
           if (!reason) return;
           try {
-            const result = await api(`/api/admin/matches/${match.id}/void-and-replay`, {
+            const result = await api(`/api/admin/matches/${match.id}/${match.can_replay ? "void-and-replay" : "void"}`, {
               method: "POST", body: JSON.stringify({ reason: reason.trim() }),
             });
-            setMessage("#assignMessage", `Đã hủy điểm trận #${match.id} và tạo trận đấu lại #${result.replay_match_id}.`);
+            setMessage("#assignMessage", result.replay_match_id
+              ? `Đã hủy điểm trận #${match.id} và tạo trận đấu lại #${result.replay_match_id}.`
+              : `Đã hủy điểm trận #${match.id}; bot cũ không được dùng để đấu lại ngày khác.`);
             await loadAssignments(true);
           } catch (error) { setMessage("#assignMessage", error.message, true); }
         });

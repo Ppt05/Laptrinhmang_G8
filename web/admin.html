@@ -19,7 +19,7 @@
   <main class="admin-wrap">
     <div class="eyebrow">KHU VỰC BAN TỔ CHỨC</div>
     <h1>Quản lý thi đấu</h1>
-    <p class="admin-lead">Ban tổ chức đặt giờ mở và đóng thi đấu. Khi đến giờ, hệ thống tự ghép ngẫu nhiên các đội có bot hợp lệ; worker nào rảnh sẽ nhận trận.</p>
+    <p class="admin-lead">Ban tổ chức đặt giờ mở và đóng thi đấu. Khi đến giờ, hệ thống tự ghép ngẫu nhiên các đội đã nộp bot hợp lệ trong ngày theo giờ Việt Nam; worker nào rảnh sẽ nhận trận.</p>
     <section id="adminLoginPanel" class="panel admin-panel admin-login-panel">
       <h2>Đăng nhập ban tổ chức</h2>
       <p class="muted">Tài khoản mặc định tên <code>admin</code>. Mật khẩu được lưu riêng trong cấu hình môi trường của Render.</p>
@@ -51,7 +51,7 @@
     <section class="panel admin-panel assignment-panel">
       <div class="eyebrow">THEO DÕI TRẬN ĐẤU</div>
       <h2>Trận được ghép tự động</h2>
-      <p class="muted">Mỗi ngày trong khung giờ mở, hệ thống ghép ngẫu nhiên một trận cho mỗi đội có bot sẵn sàng. Nếu số đội lẻ, một đội nghỉ lượt. Các worker cùng lấy trận từ hàng chờ; chỉ bật một máy thì máy đó xử lý lần lượt toàn bộ trận.</p>
+      <p class="muted">Mỗi ngày trong khung giờ mở, hệ thống chỉ ghép đội có bài nộp trong ngày và đã biên dịch thành công. Đội không nộp hôm nay nghỉ lượt; nếu số đội hợp lệ lẻ, một đội nghỉ lượt. Các worker cùng lấy trận từ hàng chờ.</p>
       <div class="admin-actions"><button class="button button-outline" id="refreshAssignments" type="button">Tải lại kết quả</button></div>
       <p id="assignMessage" class="admin-message" aria-live="polite"></p>
       <h3>Trận gần đây</h3>
@@ -60,6 +60,6 @@
     <aside class="admin-help"><strong>Lưu ý về worker</strong><p>Website và database chạy trên Render; worker chạy trên máy của ban tổ chức. Các máy cùng đọc hàng chờ PostgreSQL. Nếu một máy tắt, máy còn lại tiếp tục nhận các trận chưa bắt đầu và khôi phục trận bị gián đoạn.</p></aside>
     </section>
   </main>
-  <script src="/assets/admin.js?v=7" defer></script>
+  <script src="/assets/admin.js?v=8" defer></script>
 </body>
 </html>

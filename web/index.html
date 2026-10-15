@@ -63,7 +63,7 @@
         <div class="contest-grid">
           <article class="panel submit-panel">
             <div class="panel-title"><div><div class="eyebrow">BOT SUBMISSION</div><h3>Nộp bài dự thi</h3></div><span class="file-badge">C++17 · Python 3</span></div>
-            <p class="muted">Mỗi đội được nộp một phiên bản mã nguồn mỗi ngày theo giờ Việt Nam. Hệ thống biên dịch và kiểm tra trạng thái tự động.</p>
+            <p class="muted">Muốn thi trong ngày, đội phải nộp một bot mới trong ngày đó (giờ Việt Nam). Mỗi đội chỉ được nộp một lần; bot hôm trước không được ghép tiếp.</p>
             <div id="submitGuestHint" class="empty-state">Đăng nhập hoặc đăng ký đội để nộp bot. <button id="submitLoginLink" class="text-button" type="button">Mở tài khoản →</button></div>
             <form id="submitForm">
               <label>Ngôn ngữ<select name="language"><option value="python">Python 3</option><option value="cpp">C++17</option></select></label>
@@ -122,7 +122,7 @@
     <div class="rule-grid">
       <article class="rule-card"><span class="rule-number">01</span><div class="rule-symbol">♙</div><h3>Tạo tài khoản đội</h3><p>Chọn “Đăng ký”, nhập tên đội và mật khẩu. Không cần mã cuộc thi. Tài khoản dùng để nộp bot và theo dõi kết quả.</p></article>
       <article class="rule-card"><span class="rule-number">02</span><div class="rule-symbol">&lt;/&gt;</div><h3>Viết bot bằng C++17 hoặc Python 3</h3><p>Bot nhận trạng thái bàn cờ và danh sách nước đi hợp lệ qua <code>stdin</code>. Hãy chọn một nước trong danh sách đó.</p></article>
-      <article class="rule-card"><span class="rule-number">03</span><div class="rule-symbol">↑</div><h3>Dán và nộp mã nguồn</h3><p>Đăng nhập, chọn ngôn ngữ ở mục “Nộp bài dự thi”, dán toàn bộ mã vào ô “Mã nguồn bot” rồi bấm “Nộp mã nguồn”. Mỗi đội chỉ nộp một lần mỗi ngày theo giờ Việt Nam, kể cả khi biên dịch lỗi. Giới hạn 100 KB; không tải tệp lên.</p></article>
+      <article class="rule-card"><span class="rule-number">03</span><div class="rule-symbol">↑</div><h3>Dán và nộp mã nguồn</h3><p>Đăng nhập, chọn ngôn ngữ, dán mã nguồn bot và bấm “Nộp mã nguồn”. Muốn dự lượt ghép hôm nay, đội phải nộp bot hôm nay theo giờ Việt Nam. Chỉ nộp một lần mỗi ngày, kể cả khi biên dịch lỗi; bot cũ hết hạn dự lượt mới khi sang ngày. Giới hạn 100 KB.</p></article>
       <article class="rule-card"><span class="rule-number">04</span><div class="rule-symbol">{ }</div><h3>Định dạng bot phải trả về</h3><p>In đúng một dòng JSON cho mỗi lượt, gồm mã quân và ô đến; ví dụ <code>{"piece_id":"S01","to":"a4"}</code>. In kết quả ra <code>stdout</code> và flush; không in lời giải thích vào đó.</p></article>
       <article class="rule-card rule-protocol"><span class="rule-number">05</span><div class="rule-symbol">◷</div><h3>Kiểm tra trạng thái và thi đấu</h3><p>Theo dõi trạng thái bài nộp trong “Lịch sử nộp bài”. Chỉ bot sẵn sàng mới được ghép đấu; trận tự chạy khi ban tổ chức mở lịch. Bot trả sai định dạng, nước không hợp lệ hoặc quá 1,5 giây một lượt sẽ bị xử thua trận.</p></article>
     </div>
@@ -153,6 +153,6 @@
     </div>
     <div id="signedIn" class="signed-in hidden"><div class="signed-avatar">♟</div><div class="signed-copy"><span class="eyebrow">ĐỘI ĐANG ĐĂNG NHẬP</span><h3 id="teamName">—</h3><button id="logoutBtn" class="text-button" type="button">Đăng xuất</button></div></div>
   </dialog>
-  <script src="/assets/app.js?v=10" defer></script>
+  <script src="/assets/app.js?v=11" defer></script>
 </body>
 </html>

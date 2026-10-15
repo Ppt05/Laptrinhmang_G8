@@ -1,5 +1,5 @@
 import base64, json, os, re, secrets, selectors, struct, subprocess, tempfile, threading, time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from sqlalchemy import select, text
@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .db import SessionLocal, engine
 from .models import Job, Match, Submission, WorkerNode
 from .game_setup import coord, new_game, square
-from .event_schedule import get_event_state
+from .event_schedule import get_event_state, submission_day_bounds
 from .schema import ensure_schema
 
 DATA = Path(os.getenv("APP_DATA", "/app/data")); ARTIFACTS = DATA / "artifacts"
@@ -364,15 +364,33 @@ def main():
 
 def create_daily_pairings(day):
     import random
+    day_start, day_end = submission_day_bounds(date.fromisoformat(day))
     with SessionLocal.begin() as db:
         db.execute(text("SELECT pg_advisory_xact_lock(74620146)"))
         if db.scalar(select(Match.id).where(Match.event_day == day, Match.kind == "daily")):
             return True
-        players = db.execute(select(Submission.player_id, Submission.id).where(Submission.status == "ready").order_by(Submission.id.desc())).all()
+        # Let every source submitted before pairing finish compilation first.
+        if db.scalar(select(Submission.id).where(
+            Submission.created_at >= day_start,
+            Submission.created_at < day_end,
+            Submission.status == "queued",
+        )):
+            return False
+        players = db.execute(select(Submission.player_id, Submission.id).where(
+            Submission.status == "ready",
+            Submission.created_at >= day_start,
+            Submission.created_at < day_end,
+        ).order_by(Submission.id.desc())).all()
         newest = {}
         for pid, sid in players:
             newest.setdefault(pid, sid)
-        eligible = list(newest.items()); random.SystemRandom().shuffle(eligible)
+        already_matched = set()
+        for player_a, player_b in db.execute(select(Match.player_a, Match.player_b).where(
+            Match.event_day == day, Match.status != "void",
+        )):
+            already_matched.update((player_a, player_b))
+        eligible = [(pid, sid) for pid, sid in newest.items() if pid not in already_matched]
+        random.SystemRandom().shuffle(eligible)
         if len(eligible) < 2:
             return False
         for (pa, sa), (pb, sb) in zip(eligible[::2], eligible[1::2]):

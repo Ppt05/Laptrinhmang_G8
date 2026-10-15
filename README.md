@@ -1,6 +1,6 @@
 # OTTv2 — cuộc thi lập trình bot Oẳn Tù Tì
 
-Đây là website tổ chức cuộc thi **lập trình bot**, không phải trò chơi mà hai người bấm Đấm/Kéo/Lá trực tiếp. Mỗi đội đăng ký tài khoản, nộp mã nguồn Python 3 hoặc C++17. Khi đến lịch do ban tổ chức đặt, hệ thống tự chọn các đội có bot hợp lệ, ghép cặp ngẫu nhiên và cho hai chương trình đấu trên bàn cờ 9×9. Website hiển thị lịch sử, điểm số và phát lại từng nước đi.
+Đây là website tổ chức cuộc thi **lập trình bot**, không phải trò chơi mà hai người bấm Đấm/Kéo/Lá trực tiếp. Mỗi đội đăng ký tài khoản, nộp mã nguồn Python 3 hoặc C++17 **trong từng ngày muốn dự thi**. Khi đến lịch do ban tổ chức đặt, hệ thống tự chọn các đội có bot nộp trong ngày và biên dịch thành công, ghép cặp ngẫu nhiên và cho hai chương trình đấu trên bàn cờ 9×9. Website hiển thị lịch sử, điểm số và phát lại từng nước đi.
 
 ## Xem sản phẩm
 
@@ -30,7 +30,7 @@ flowchart LR
 
 1. **Đăng ký và nộp bài.** API lưu tài khoản và mã nguồn vào PostgreSQL, rồi thêm một job biên dịch vào bảng `jobs`. Một đội được nộp **một lần mỗi ngày theo giờ Việt Nam**, kể cả khi mã không biên dịch được. Giới hạn mỗi bài là **100 KB**.
 2. **Biên dịch.** Worker rảnh lấy job từ PostgreSQL, dùng Docker sandbox để kiểm tra/biên dịch. Bài thành công có trạng thái `ready`; bài lỗi có trạng thái `failed` và hiện thông báo lỗi trong tài khoản đội.
-3. **Ghép trận tự động.** Khi lịch thi đang mở và qua giờ bắt đầu trong ngày, worker lấy **bản `ready` mới nhất của mỗi đội**, xáo trộn rồi ghép từng cặp. Mỗi ngày chỉ tạo **một lượt ghép tự động**; đội lẻ nghỉ lượt và không được cộng điểm. Nếu chưa đủ hai bot hợp lệ, worker tiếp tục chờ. Đội nộp sau khi lượt ghép trong ngày đã được tạo sẽ đợi lượt ngày sau. Bản `ready` từ ngày trước vẫn được dùng nếu đội chưa có bản mới hợp lệ.
+3. **Ghép trận tự động.** Khi lịch thi đang mở và qua giờ bắt đầu trong ngày, worker đợi các bài đã nộp hôm nay biên dịch xong, rồi chỉ lấy bài `ready` **đã nộp trong chính ngày đó theo giờ Việt Nam**. Worker xáo trộn các đội hợp lệ và ghép từng cặp. Mỗi ngày chỉ tạo **một lượt ghép tự động**; đội lẻ hoặc đội không nộp trong ngày nghỉ lượt và không được cộng điểm. Nếu chưa đủ hai bot hợp lệ, worker tiếp tục chờ. Khi lượt ghép đã tạo, hệ thống khóa nộp bài đến ngày sau. Đội đã có trận tính điểm trong ngày, kể cả thách đấu hoặc đấu lại, không được ghép thêm. Bài `ready` từ hôm trước không được dùng cho lượt ghép mới; mã nguồn cũ vẫn lưu để xem lịch sử trận đã tạo.
 4. **Chạy trận.** Mỗi trận là một job chung. Worker nào rảnh thì nhận trước; không chia cố định đội theo máy. Worker chạy hai bot trong hai Docker sandbox, gửi trạng thái bàn cờ cho bot theo từng lượt, kiểm tra nước đi, tính thắng/hòa/thua và ghi diễn biến vào PostgreSQL.
 5. **Công bố kết quả.** Website đọc dữ liệu đã lưu để hiện lịch sử đấu, bảng xếp hạng theo toàn mùa hoặc ngày ghép trận và cửa sổ **Xem trận**. Phần xem trận dựng lại bàn cờ từ danh sách nước đi, **không phải video lấy từ Docker và không truyền trực tiếp trận đang chạy**.
 
@@ -41,13 +41,13 @@ Một worker có thể xử lý toàn bộ hàng đợi, lần lượt từng jo
 ### Ví dụ một ngày thi
 
 - Admin đặt lịch từ 20:40 ngày 14/10 đến 20:40 ngày 22/10 (giờ Việt Nam) và bật thi đấu.
-- Hai đội đã có bot `ready`. Sau 20:40 mỗi ngày trong khoảng lịch, worker tạo cặp ngẫu nhiên. Nếu worker bật muộn hơn giờ đó, nó tạo lượt khi kết nối lại, miễn là ngày ấy chưa từng tạo lượt ghép tự động.
-- Trận hoàn tất được cộng điểm và xuất hiện trong **Xem trận**. Trận phát sinh từ API thách đấu (nếu sử dụng) cũng tính điểm; hệ thống hiện **không có chế độ luyện tập riêng**.
+- Hai đội nộp bot trong ngày và có trạng thái `ready`. Sau 20:40 mỗi ngày trong khoảng lịch, worker tạo cặp ngẫu nhiên. Nếu worker bật muộn hơn giờ đó, nó tạo lượt khi kết nối lại, miễn là ngày ấy chưa từng tạo lượt ghép tự động.
+- Trận hoàn tất được cộng điểm và xuất hiện trong **Xem trận**. Trận phát sinh từ API thách đấu (nếu sử dụng) cũng tính điểm và chiếm lượt thi trong ngày; hệ thống hiện **không có chế độ luyện tập riêng**.
 
 ## Đội thi cần làm gì?
 
 1. Vào website, **đăng ký tên đội và mật khẩu** rồi đăng nhập. Không cần mã cuộc thi.
-2. Chọn Python hoặc C++, dán mã nguồn bot và nộp. Theo dõi trạng thái `Đang chờ → Sẵn sàng` hoặc lỗi biên dịch trong tài khoản.
+2. Trong **mỗi ngày muốn thi**, chọn Python hoặc C++, dán mã nguồn bot và nộp. Theo dõi trạng thái `Đang chờ → Sẵn sàng` hoặc lỗi biên dịch trong tài khoản. Một đội chỉ được nộp một lần trong ngày, kể cả bài lỗi. Sau nửa đêm giờ Việt Nam, bài hôm trước hết quyền dự lượt ghép mới; đội phải nộp lại nếu muốn thi tiếp.
 3. Đợi hệ thống ghép trận theo lịch; thành viên không cần online để bấm nước đi. Xem lịch sử, bảng xếp hạng và phát lại sau khi trận kết thúc.
 
 Bot nhận **một dòng JSON trên `stdin` mỗi lượt**, gồm `side`, `pieces`, `move_number` và `legal_moves`. Bot phải chọn một nước trong `legal_moves` rồi in **đúng một dòng JSON** ra `stdout`, ví dụ:
@@ -163,17 +163,17 @@ Không để Windows Sleep trong lúc thi. Máy bạn khác có thể thay máy 
 | Dấu hiệu | Kiểm tra đầu tiên |
 | --- | --- |
 | Bài nộp đứng ở `queued` | Docker Desktop, `docker compose ... ps`, log worker, External Database URL |
-| Lịch báo mở nhưng chưa có trận | Ít nhất hai đội có bài `ready`? Đã qua giờ ghép trong ngày? Hôm đó đã tạo lượt ghép tự động chưa? |
+| Lịch báo mở nhưng chưa có trận | Ít nhất hai đội đã nộp bài **hôm nay** và có trạng thái `ready`? Đã qua giờ ghép trong ngày? Hôm đó đã tạo lượt ghép tự động chưa? |
 | Worker không hiện trực tuyến | `WORKER_ID` có trùng máy khác không? Docker/Internet/URL database có hoạt động không? |
 | Trận `failed` | Xem log worker và trạng thái sandbox; đây có thể là lỗi hạ tầng, không tự tính điểm |
 | Bot thua ngay nước đầu | Xem giao thức `stdin/stdout`, newline/flush, `legal_moves`, giới hạn thời gian |
 | Website chưa hiện mã mới | Xem commit đang Live trong Render Deploys; worker phải cập nhật riêng |
 
-Khi **một trận đã kết thúc sai vì lỗi hạ tầng**, admin có nút **Hủy điểm, đấu lại**. Admin phải nhập lý do; trận cũ được giữ để tra cứu nhưng không tính điểm, trận mới dùng đúng hai phiên bản bot của trận cũ. Không sửa âm thầm kết quả. Tính năng này chỉ dùng sau khi xác minh lỗi hạ tầng.
+Khi **một trận đã kết thúc sai vì lỗi hạ tầng**, admin phải nhập lý do hủy. Nếu cả hai bài được nộp trong ngày hiện tại và hai đội chưa có trận khác hôm nay, admin có thể **Hủy điểm, đấu lại** bằng đúng hai phiên bản đó; trận đấu lại chiếm lượt thi trong ngày. Với trận cũ hoặc đội đã có trận khác hôm nay, admin chỉ có thể **Hủy điểm** và không chạy lại bằng mã hôm trước. Trận bị hủy vẫn lưu để tra cứu nhưng không tính điểm. Không sửa âm thầm kết quả.
 
 ## Lưu ý về bí mật và phạm vi hiện tại
 
 - Không commit `.env`, `.env.worker`, URL PostgreSQL, mật khẩu admin, `ADMIN_API_KEY` hoặc token đội. Hai file môi trường thật đã nằm trong `.gitignore`. Tài khoản admin có quyền thay đổi lịch và hủy điểm trận, nên chỉ cấp mật khẩu cho người phụ trách.
 - Worker có quyền truy cập Docker socket trên máy chạy nó; chỉ cài trên máy đáng tin cậy của ban tổ chức.
-- Website có API `/api/challenges` cho thách đấu trực tiếp trong giờ mở thi. Giao diện hiện tập trung vào lượt **ghép ngẫu nhiên theo ngày**; trận thách đấu nếu được tạo cũng được tính vào bảng điểm. Không có chế độ “đấu thử không tính điểm”.
+- Website có API `/api/challenges` cho thách đấu trực tiếp trong giờ mở thi. Cả hai đội phải có bài `ready` nộp hôm nay và chưa có trận nào khác trong ngày; trận thách đấu được tính vào bảng điểm. Giao diện hiện tập trung vào lượt **ghép ngẫu nhiên theo ngày**. Không có chế độ “đấu thử không tính điểm”.
 - Tài liệu này mô tả code trong repository. Trước ngày thi, kiểm tra commit đang Live trên Render và phiên bản worker của từng máy vì hai phần được triển khai riêng.

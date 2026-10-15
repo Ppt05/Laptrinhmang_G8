@@ -1,9 +1,15 @@
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 from .models import EventControl
 
 VN = ZoneInfo("Asia/Ho_Chi_Minh")
+
+def submission_day_bounds(day: date) -> tuple[datetime, datetime]:
+    """UTC bounds for one submission day in Vietnam."""
+    start = datetime.combine(day, datetime.min.time(), VN).astimezone(timezone.utc)
+    end = datetime.combine(day + timedelta(days=1), datetime.min.time(), VN).astimezone(timezone.utc)
+    return start, end
 
 def as_vietnam_time(value: datetime) -> datetime:
     if value.tzinfo is None:

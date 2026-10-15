@@ -346,7 +346,12 @@ async function refreshDashboard() {
   if (!token()) return;
   try {
     const [subs, matches] = await Promise.all([request("/api/submissions"), request("/api/my/matches")]);
-    $("#submissionsBody").innerHTML = subs.map((s) => `<tr><td><strong>#${s.id}</strong></td><td>${s.language === "cpp" ? "C++17" : "Python"}</td><td>${dateText(s.created_at)}</td><td><span class="pill ${s.status}">${statusText[s.status] || s.status}</span>${s.compile_error ? `<small class="row-error" title="Lỗi biên dịch">${escapeHtml(s.compile_error)}</small>` : ""}</td></tr>`).join("");
+    $("#submissionsBody").innerHTML = subs.map((s) => {
+      const expired = s.status === "ready" && !s.eligible_today;
+      const displayStatus = expired ? "expired" : s.status;
+      const displayText = expired ? "Hết hạn dự thi" : statusText[s.status] || s.status;
+      return `<tr><td><strong>#${s.id}</strong></td><td>${s.language === "cpp" ? "C++17" : "Python"}</td><td>${dateText(s.created_at)}</td><td><span class="pill ${displayStatus}">${displayText}</span>${s.compile_error ? `<small class="row-error" title="Lỗi biên dịch">${escapeHtml(s.compile_error)}</small>` : ""}</td></tr>`;
+    }).join("");
     $("#submissionEmpty").classList.toggle("hidden", subs.length > 0);
     $("#matchesBody").innerHTML = matches.map((m) => `<tr><td><strong>#${m.id}</strong><small class="row-sub">${escapeHtml(m.event_day || "")}</small></td><td>${escapeHtml(m.opponent)}</td><td><span class="pill ${m.result}">${({ win: "Thắng", loss: "Thua", draw: "Hòa", void: "Hủy do lỗi hệ thống", pending: "Đang chờ" })[m.result] || m.status}</span>${m.void_reason ? `<small class="row-error">${escapeHtml(m.void_reason)}</small>` : ""}${m.status === "done" ? `<button class="match-replay-link" type="button" data-replay-id="${m.id}">Xem lại trận ↗</button>` : ""}</td><td>${Number(m.points).toLocaleString("vi-VN")}</td></tr>`).join("");
     $("#matchesEmpty").classList.toggle("hidden", matches.length > 0);

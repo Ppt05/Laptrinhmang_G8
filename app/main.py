@@ -5,12 +5,12 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from pathlib import Path
 from .db import SessionLocal
 from .game_setup import new_game
 from .models import EventControl, Job, Match, Player, Submission, WorkerNode
-from .event_schedule import as_vietnam_time, get_event_state
+from .event_schedule import as_vietnam_time, get_event_state, submission_day_bounds
 from .security import authorized_player, check_registration, digest, hash_password, new_token, verify_password
 from .schema import ensure_schema
 
@@ -32,6 +32,24 @@ class Challenge(BaseModel): opponent_id: int
 class EventScheduleInput(BaseModel): start_at: datetime; end_at: datetime; enabled: bool
 class AdminLogin(BaseModel): username: str = Field(min_length=1, max_length=80); password: str = Field(min_length=1, max_length=256)
 class VoidMatchInput(BaseModel): reason: str = Field(min_length=8, max_length=500)
+
+def mark_match_void(match: Match, reason: str):
+    detail = json.loads(match.detail) if match.detail else {}
+    detail["void_reason"] = reason.strip()
+    detail["voided_at"] = datetime.now(timezone.utc).isoformat()
+    match.detail = json.dumps(detail, ensure_ascii=False)
+    match.status = "void"
+
+def match_for_teams_on_day(db, team_ids, day, exclude_id=None):
+    query = select(Match.id).where(
+        Match.event_day == day,
+        Match.status != "void",
+        (Match.player_a.in_(team_ids)) | (Match.player_b.in_(team_ids)),
+    )
+    if exclude_id is not None:
+        query = query.where(Match.id != exclude_id)
+    return db.scalar(query)
+
 def matches_engine_enabled():
     return os.getenv("MATCHES_ENABLED", "false").lower() == "true"
 
@@ -59,8 +77,14 @@ def require_admin(key=None, authorization=None):
     if not valid:
         raise HTTPException(401, "Phiên đăng nhập ban tổ chức không hợp lệ hoặc đã hết hạn")
 
-def latest_ready(db, player_id):
-    return db.scalar(select(Submission).where(Submission.player_id == player_id, Submission.status == "ready").order_by(Submission.id.desc()))
+def latest_ready(db, player_id, day):
+    day_start, day_end = submission_day_bounds(day)
+    return db.scalar(select(Submission).where(
+        Submission.player_id == player_id,
+        Submission.status == "ready",
+        Submission.created_at >= day_start,
+        Submission.created_at < day_end,
+    ).order_by(Submission.id.desc()))
 
 def worker_online(node):
     return bool(node and node.last_seen and node.last_seen >= datetime.now(timezone.utc) - timedelta(seconds=30))
@@ -116,19 +140,65 @@ def admin_workers(x_admin_key: str | None = Header(default=None), authorization:
 @app.get("/api/admin/matches")
 def admin_matches(x_admin_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
     require_admin(x_admin_key, authorization)
+    today = datetime.now(VN).date()
+    day_start, day_end = submission_day_bounds(today)
     with SessionLocal() as db:
         matches = db.scalars(select(Match).order_by(Match.id.desc()).limit(50)).all()
         names = {p.id: p.name for p in db.scalars(select(Player)).all()}
-        return [{"id": m.id, "team_a": names.get(m.player_a, str(m.player_a)),
-                 "team_b": names.get(m.player_b, str(m.player_b)), "worker_id": m.worker_id,
-                 "status": m.status, "kind": m.kind, "event_day": m.event_day,
-                 "winner": names.get(m.winner_id) if m.winner_id else None,
-                 "replay_of": m.replay_of}
-                for m in matches]
+        output = []
+        for m in matches:
+            submissions_today = all(
+                submission and submission.created_at and day_start <= submission.created_at < day_end
+                for submission in (db.get(Submission, m.submission_a), db.get(Submission, m.submission_b))
+            )
+            can_replay = bool(m.event_day == today.isoformat() and submissions_today
+                              and not match_for_teams_on_day(db, (m.player_a, m.player_b), today.isoformat(), exclude_id=m.id))
+            output.append({"id": m.id, "team_a": names.get(m.player_a, str(m.player_a)),
+                           "team_b": names.get(m.player_b, str(m.player_b)), "worker_id": m.worker_id,
+                           "status": m.status, "kind": m.kind, "event_day": m.event_day,
+                           "winner": names.get(m.winner_id) if m.winner_id else None,
+                           "replay_of": m.replay_of, "can_replay": can_replay})
+        return output
 
 @app.post("/api/admin/matches/{match_id}/void-and-replay")
 def admin_void_and_replay(match_id: int, body: VoidMatchInput,
                           x_admin_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
+    require_admin(x_admin_key, authorization)
+    if len(body.reason.strip()) < 8:
+        raise HTTPException(400, "Lý do hủy trận phải có ít nhất 8 ký tự")
+    with SessionLocal.begin() as db:
+        db.execute(text("SELECT pg_advisory_xact_lock(74620146)"))
+        m = db.scalar(select(Match).where(Match.id == match_id).with_for_update())
+        if not m:
+            raise HTTPException(404, "Không tìm thấy trận")
+        if m.status not in ("done", "failed"):
+            raise HTTPException(409, "Chỉ có thể hủy trận đã kết thúc hoặc bị lỗi")
+        if db.scalar(select(Match.id).where(Match.replay_of == match_id)):
+            raise HTTPException(409, "Trận này đã được tạo trận đấu lại")
+        today = datetime.now(VN).date()
+        day_start, day_end = submission_day_bounds(today)
+        original_submissions = (db.get(Submission, m.submission_a), db.get(Submission, m.submission_b))
+        if (m.event_day != today.isoformat() or any(
+            not submission or not submission.created_at or
+            not day_start <= submission.created_at < day_end
+            for submission in original_submissions
+        )):
+            raise HTTPException(409, "Bot hôm trước đã hết hạn; hãy hủy điểm trận cũ, không thể đấu lại bằng mã cũ")
+        participants = (m.player_a, m.player_b)
+        db.scalars(select(Player).where(Player.id.in_(participants)).order_by(Player.id).with_for_update()).all()
+        if match_for_teams_on_day(db, participants, today.isoformat(), exclude_id=match_id):
+            raise HTTPException(409, "Một trong hai đội đã có trận khác hôm nay; không thể đấu lại")
+        mark_match_void(m, body.reason)
+        replay = Match(player_a=m.player_a, player_b=m.player_b,
+                       submission_a=m.submission_a, submission_b=m.submission_b,
+                       event_day=today.isoformat(), kind="rematch", replay_of=m.id)
+        db.add(replay); db.flush()
+        db.add(Job(kind="match", payload=json.dumps({"match_id": replay.id})))
+        return {"voided_match_id": m.id, "replay_match_id": replay.id, "status": "queued"}
+
+@app.post("/api/admin/matches/{match_id}/void")
+def admin_void_match(match_id: int, body: VoidMatchInput,
+                     x_admin_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
     require_admin(x_admin_key, authorization)
     if len(body.reason.strip()) < 8:
         raise HTTPException(400, "Lý do hủy trận phải có ít nhất 8 ký tự")
@@ -140,25 +210,8 @@ def admin_void_and_replay(match_id: int, body: VoidMatchInput,
             raise HTTPException(409, "Chỉ có thể hủy trận đã kết thúc hoặc bị lỗi")
         if db.scalar(select(Match.id).where(Match.replay_of == match_id)):
             raise HTTPException(409, "Trận này đã được tạo trận đấu lại")
-        participants = (m.player_a, m.player_b)
-        db.scalars(select(Player).where(Player.id.in_(participants)).order_by(Player.id).with_for_update()).all()
-        active = db.scalar(select(Match.id).where(
-            Match.status.in_(["queued", "running"]),
-            (Match.player_a.in_(participants)) | (Match.player_b.in_(participants))))
-        if active:
-            raise HTTPException(409, "Hai đội đang có trận chờ hoặc đang chạy; hãy đấu lại sau")
-        original_detail = json.loads(m.detail) if m.detail else {}
-        original_detail["void_reason"] = body.reason.strip()
-        original_detail["voided_at"] = datetime.now(timezone.utc).isoformat()
-        m.detail = json.dumps(original_detail, ensure_ascii=False)
-        m.status = "void"
-        today = datetime.now(VN).date().isoformat()
-        replay = Match(player_a=m.player_a, player_b=m.player_b,
-                       submission_a=m.submission_a, submission_b=m.submission_b,
-                       event_day=today, kind="rematch", replay_of=m.id)
-        db.add(replay); db.flush()
-        db.add(Job(kind="match", payload=json.dumps({"match_id": replay.id})))
-        return {"voided_match_id": m.id, "replay_match_id": replay.id, "status": "queued"}
+        mark_match_void(m, body.reason)
+        return {"voided_match_id": m.id, "status": "void"}
 
 @app.get("/health")
 def health(): return {"ok": True}
@@ -215,27 +268,34 @@ def submit(body: Submit, player_id: int = Depends(authorized_player)):
     if lang not in ("cpp", "python"): raise HTTPException(400, "language phải là cpp hoặc python")
     if len(body.source.encode("utf-8")) > int(os.getenv("MAX_SOURCE_BYTES", "100000")): raise HTTPException(413, "Mã nguồn vượt giới hạn 100 KB")
     with SessionLocal.begin() as db:
+        db.execute(text("SELECT pg_advisory_xact_lock(74620146)"))
         # Lock the team row so concurrent requests cannot both pass the daily quota.
         db.scalar(select(Player).where(Player.id == player_id).with_for_update())
         local_day = datetime.now(VN).date()
-        day_start = datetime.combine(local_day, datetime.min.time(), VN).astimezone(timezone.utc)
-        day_end = datetime.combine(local_day + timedelta(days=1), datetime.min.time(), VN).astimezone(timezone.utc)
+        day_start, day_end = submission_day_bounds(local_day)
         already_submitted = db.scalar(select(Submission.id).where(
             Submission.player_id == player_id,
             Submission.created_at >= day_start,
             Submission.created_at < day_end))
         if already_submitted:
             raise HTTPException(429, "Mỗi đội chỉ được nộp một phiên bản mã nguồn mỗi ngày (giờ Việt Nam)")
+        if db.scalar(select(Match.id).where(Match.event_day == local_day.isoformat(), Match.kind == "daily")):
+            raise HTTPException(409, "Lượt ghép hôm nay đã chốt; hãy nộp bot mới vào ngày mai")
+        if match_for_teams_on_day(db, (player_id,), local_day.isoformat()):
+            raise HTTPException(409, "Đội đã có trận hôm nay; hãy nộp bot mới vào ngày mai")
         s = Submission(player_id=player_id, language=lang, source=body.source); db.add(s); db.flush()
         db.add(Job(kind="compile", payload=json.dumps({"submission_id": s.id})))
         return {"submission_id": s.id, "status": "queued"}
 
 @app.get("/api/submissions")
 def submissions(player_id: int = Depends(authorized_player)):
+    day_start, day_end = submission_day_bounds(datetime.now(VN).date())
     with SessionLocal() as db:
         rows = db.scalars(select(Submission).where(Submission.player_id == player_id).order_by(Submission.id.desc())).all()
         return [{"id": x.id, "language": x.language, "status": x.status, "compile_error": x.compile_error,
-                 "created_at": x.created_at.isoformat() if x.created_at else None} for x in rows]
+                 "created_at": x.created_at.isoformat() if x.created_at else None,
+                 "eligible_today": bool(x.status == "ready" and x.created_at and day_start <= x.created_at < day_end)}
+                for x in rows]
 
 @app.get("/api/my/matches")
 def my_matches(player_id: int = Depends(authorized_player)):
@@ -264,14 +324,17 @@ def challenge(body: Challenge, player_id: int = Depends(authorized_player)):
         raise HTTPException(400, "Hiện không nằm trong khung giờ thi đấu")
     if body.opponent_id == player_id: raise HTTPException(400, "Không thể thách đấu chính mình")
     with SessionLocal.begin() as db:
+        db.execute(text("SELECT pg_advisory_xact_lock(74620146)"))
         participants = sorted((player_id, body.opponent_id))
         db.scalars(select(Player).where(Player.id.in_(participants)).order_by(Player.id).with_for_update()).all()
-        a, b = latest_ready(db, player_id), latest_ready(db, body.opponent_id)
-        if not a or not b: raise HTTPException(409, "Cả hai đội cần có bot đã biên dịch thành công")
+        today = datetime.now(VN).date()
+        a, b = latest_ready(db, player_id, today), latest_ready(db, body.opponent_id, today)
+        if not a or not b: raise HTTPException(409, "Cả hai đội cần nộp bot hợp lệ trong hôm nay (giờ Việt Nam)")
         active = db.scalar(select(Match.id).where(Match.status.in_(["queued", "running"]), (Match.player_a.in_(participants)) | (Match.player_b.in_(participants))))
         if active: raise HTTPException(409, "Bạn đã có một trận đang chờ hoặc đang chạy")
-        today = datetime.now(VN).date().isoformat()
-        m = Match(player_a=player_id, player_b=body.opponent_id, submission_a=a.id, submission_b=b.id, event_day=today, kind="challenge")
+        if match_for_teams_on_day(db, participants, today.isoformat()):
+            raise HTTPException(409, "Mỗi đội chỉ được đấu một trận tính điểm trong ngày")
+        m = Match(player_a=player_id, player_b=body.opponent_id, submission_a=a.id, submission_b=b.id, event_day=today.isoformat(), kind="challenge")
         db.add(m); db.flush(); db.add(Job(kind="match", payload=json.dumps({"match_id": m.id})))
         return {"match_id": m.id, "status": "queued"}
 
