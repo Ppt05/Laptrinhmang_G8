@@ -60,7 +60,9 @@ def position_key(game):
     return json.dumps([game["turn"], pieces], separators=(",", ":"))
 
 def sandbox_args():
-    cmd = ["docker", "run", "--rm", "-i", "--network", "none", "--read-only", "--tmpfs", "/tmp:rw,nosuid,nodev,size=32m,mode=1777", "--user", "10001:10001", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--memory", "256m", "--cpus", "1", "--pids-limit", "32"]
+    # Docker mounts tmpfs with noexec by default. C++ artifacts must execute
+    # from /tmp/program; the other sandbox restrictions remain in force.
+    cmd = ["docker", "run", "--rm", "-i", "--network", "none", "--read-only", "--tmpfs", "/tmp:rw,exec,nosuid,nodev,size=32m,mode=1777", "--user", "10001:10001", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--memory", "256m", "--cpus", "1", "--pids-limit", "32"]
     return cmd
 
 def docker_cmd(mode, lang):
@@ -173,6 +175,14 @@ def play_match(db: Session, m: Match):
             except (UnicodeDecodeError, json.JSONDecodeError):
                 selected = None
             if selected is None:
+                # Entry-point failures are infrastructure errors, not a bot
+                # forfeiture. Never award points when the sandbox could not
+                # start the submitted executable.
+                if player_proc.poll() in (64, 70, 71):
+                    m.status = "failed"
+                    m.detail = json.dumps({"error": "Sandbox không khởi chạy được bot",
+                                           "side": side, "exit_code": player_proc.returncode})
+                    return
                 game["winner"], game["win_reason"] = ("north" if side == "south" else "south"), "invalid_move_or_timeout"
                 turns.append({"move_number": game["move_number"], "side": side, "error": "invalid_move_or_timeout"})
                 break
