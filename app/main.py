@@ -31,6 +31,7 @@ class Submit(BaseModel): language: str; source: str = Field(min_length=1)
 class Challenge(BaseModel): opponent_id: int
 class EventScheduleInput(BaseModel): start_at: datetime; end_at: datetime; enabled: bool
 class AdminLogin(BaseModel): username: str = Field(min_length=1, max_length=80); password: str = Field(min_length=1, max_length=256)
+class VoidMatchInput(BaseModel): reason: str = Field(min_length=8, max_length=500)
 def matches_engine_enabled():
     return os.getenv("MATCHES_ENABLED", "false").lower() == "true"
 
@@ -121,8 +122,43 @@ def admin_matches(x_admin_key: str | None = Header(default=None), authorization:
         return [{"id": m.id, "team_a": names.get(m.player_a, str(m.player_a)),
                  "team_b": names.get(m.player_b, str(m.player_b)), "worker_id": m.worker_id,
                  "status": m.status, "kind": m.kind, "event_day": m.event_day,
-                 "winner": names.get(m.winner_id) if m.winner_id else None}
+                 "winner": names.get(m.winner_id) if m.winner_id else None,
+                 "replay_of": m.replay_of}
                 for m in matches]
+
+@app.post("/api/admin/matches/{match_id}/void-and-replay")
+def admin_void_and_replay(match_id: int, body: VoidMatchInput,
+                          x_admin_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
+    require_admin(x_admin_key, authorization)
+    if len(body.reason.strip()) < 8:
+        raise HTTPException(400, "Lý do hủy trận phải có ít nhất 8 ký tự")
+    with SessionLocal.begin() as db:
+        m = db.scalar(select(Match).where(Match.id == match_id).with_for_update())
+        if not m:
+            raise HTTPException(404, "Không tìm thấy trận")
+        if m.status not in ("done", "failed"):
+            raise HTTPException(409, "Chỉ có thể hủy trận đã kết thúc hoặc bị lỗi")
+        if db.scalar(select(Match.id).where(Match.replay_of == match_id)):
+            raise HTTPException(409, "Trận này đã được tạo trận đấu lại")
+        participants = (m.player_a, m.player_b)
+        db.scalars(select(Player).where(Player.id.in_(participants)).order_by(Player.id).with_for_update()).all()
+        active = db.scalar(select(Match.id).where(
+            Match.status.in_(["queued", "running"]),
+            (Match.player_a.in_(participants)) | (Match.player_b.in_(participants))))
+        if active:
+            raise HTTPException(409, "Hai đội đang có trận chờ hoặc đang chạy; hãy đấu lại sau")
+        original_detail = json.loads(m.detail) if m.detail else {}
+        original_detail["void_reason"] = body.reason.strip()
+        original_detail["voided_at"] = datetime.now(timezone.utc).isoformat()
+        m.detail = json.dumps(original_detail, ensure_ascii=False)
+        m.status = "void"
+        today = datetime.now(VN).date().isoformat()
+        replay = Match(player_a=m.player_a, player_b=m.player_b,
+                       submission_a=m.submission_a, submission_b=m.submission_b,
+                       event_day=today, kind="rematch", replay_of=m.id)
+        db.add(replay); db.flush()
+        db.add(Job(kind="match", payload=json.dumps({"match_id": replay.id})))
+        return {"voided_match_id": m.id, "replay_match_id": replay.id, "status": "queued"}
 
 @app.get("/health")
 def health(): return {"ok": True}
@@ -178,9 +214,20 @@ def submit(body: Submit, player_id: int = Depends(authorized_player)):
     lang = body.language.lower()
     if lang not in ("cpp", "python"): raise HTTPException(400, "language phải là cpp hoặc python")
     if len(body.source.encode("utf-8")) > int(os.getenv("MAX_SOURCE_BYTES", "100000")): raise HTTPException(413, "Mã nguồn vượt giới hạn 100 KB")
-    with SessionLocal() as db:
+    with SessionLocal.begin() as db:
+        # Lock the team row so concurrent requests cannot both pass the daily quota.
+        db.scalar(select(Player).where(Player.id == player_id).with_for_update())
+        local_day = datetime.now(VN).date()
+        day_start = datetime.combine(local_day, datetime.min.time(), VN).astimezone(timezone.utc)
+        day_end = datetime.combine(local_day + timedelta(days=1), datetime.min.time(), VN).astimezone(timezone.utc)
+        already_submitted = db.scalar(select(Submission.id).where(
+            Submission.player_id == player_id,
+            Submission.created_at >= day_start,
+            Submission.created_at < day_end))
+        if already_submitted:
+            raise HTTPException(429, "Mỗi đội chỉ được nộp một phiên bản mã nguồn mỗi ngày (giờ Việt Nam)")
         s = Submission(player_id=player_id, language=lang, source=body.source); db.add(s); db.flush()
-        db.add(Job(kind="compile", payload=json.dumps({"submission_id": s.id}))); db.commit()
+        db.add(Job(kind="compile", payload=json.dumps({"submission_id": s.id})))
         return {"submission_id": s.id, "status": "queued"}
 
 @app.get("/api/submissions")
@@ -198,12 +245,12 @@ def my_matches(player_id: int = Depends(authorized_player)):
         for m in rows:
             opponent_id = m.player_b if m.player_a == player_id else m.player_a
             opponent = db.get(Player, opponent_id)
-            pts = m.points_a if m.player_a == player_id else m.points_b
-            result = "pending" if m.status != "done" else "draw" if m.winner_id is None else "win" if m.winner_id == player_id else "loss"
+            pts = 0 if m.status == "void" else m.points_a if m.player_a == player_id else m.points_b
+            result = "void" if m.status == "void" else "pending" if m.status != "done" else "draw" if m.winner_id is None else "win" if m.winner_id == player_id else "loss"
             detail = json.loads(m.detail) if m.detail else {}
             output.append({"id": m.id, "opponent": opponent.name if opponent else "Đội đối thủ", "kind": m.kind,
                            "event_day": m.event_day, "status": m.status, "result": result, "points": pts,
-                           "win_reason": detail.get("win_reason"),
+                           "win_reason": detail.get("win_reason"), "void_reason": detail.get("void_reason"),
                            "move_count": sum(1 for turn in detail.get("turns", []) if turn.get("piece_id") and turn.get("to"))})
         return output
 

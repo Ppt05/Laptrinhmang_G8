@@ -1,5 +1,5 @@
 import base64, json, os, re, secrets, selectors, struct, subprocess, tempfile, threading, time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from sqlalchemy import select, text
@@ -70,7 +70,14 @@ def docker_cmd(mode, lang):
 def compile_submission(db: Session, s: Submission):
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     proc = docker_cmd("compile", s.language)
-    out, _ = proc.communicate(s.source.encode(), timeout=35)
+    try:
+        out, _ = proc.communicate(s.source.encode(), timeout=35)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.communicate()
+        s.status = "failed"
+        s.compile_error = "Biên dịch vượt thời gian 35 giây"
+        return
     result = json.loads(out.decode("utf-8", "replace").splitlines()[-1])
     if not result.get("ok"):
         s.status = "failed"; s.compile_error = result.get("error", "Biên dịch thất bại")[:6000]
@@ -115,7 +122,12 @@ def play_match(db: Session, m: Match):
     a, b = db.get(Submission, m.submission_a), db.get(Submission, m.submission_b)
     if not a or not b or not ensure_local_artifact(db, a) or not ensure_local_artifact(db, b):
         m.status = "failed"; m.detail = json.dumps({"error": "Bot chưa sẵn sàng"}); return
-    (pa, ca), (pb, cb) = start_bot(a), start_bot(b)
+    pa, ca = start_bot(a)
+    try:
+        pb, cb = start_bot(b)
+    except Exception:
+        pa.kill(); pa.wait(timeout=2)
+        raise
     game = new_game(); turns = []; side_a, side_b = "south", "north"
     try:
         max_moves = int(os.getenv("MATCH_MAX_MOVES", "200"))
@@ -167,12 +179,30 @@ def play_match(db: Session, m: Match):
             if cid:
                 subprocess.run(["docker", "rm", "-f", cid], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-def claim(db):
+def recover_abandoned_jobs(db):
+    """Return work from a dead or replaced worker to the shared queue."""
+    now = datetime.now(timezone.utc)
+    jobs = db.scalars(select(Job).where(Job.status == "running")
+                      .order_by(Job.id).with_for_update(skip_locked=True).limit(20)).all()
+    for job in jobs:
+        node = db.get(WorkerNode, job.worker_id) if job.worker_id else None
+        stale_node = not node or not node.last_seen or node.last_seen < now - timedelta(seconds=60)
+        replaced = bool(node and job.claim_token and node.instance_token != job.claim_token)
+        expired = bool(job.claimed_at and job.claimed_at < now - timedelta(hours=1))
+        if stale_node or replaced or expired:
+            job.status = "queued"
+            job.worker_id = None
+            job.claim_token = None
+            job.claimed_at = None
+
+def claim(db, instance_token):
     job = db.scalar(select(Job).where(Job.status == "queued")
                     .order_by(Job.id).with_for_update(skip_locked=True).limit(1))
     if job:
         job.status = "running"
         job.worker_id = WORKER_ID
+        job.claim_token = instance_token
+        job.claimed_at = datetime.now(timezone.utc)
         job.attempts += 1
         if job.kind == "match":
             match = db.get(Match, json.loads(job.payload)["match_id"])
@@ -181,24 +211,52 @@ def claim(db):
         db.flush()
         return job
 
-def process(job_id):
-    with SessionLocal.begin() as db:
-        job = db.get(Job, job_id)
-        try:
-            payload = json.loads(job.payload)
-            if job.kind == "compile":
-                s = db.get(Submission, payload["submission_id"]); compile_submission(db, s)
-            elif job.kind == "match":
-                m = db.get(Match, payload["match_id"]); m.status = "running"; play_match(db, m)
-            job.status = "done"
-        except Exception as exc:
-            job.status = "failed"
-            if job.kind == "match":
-                m = db.get(Match, json.loads(job.payload).get("match_id"));
-                if m: m.status = "failed"; m.detail = json.dumps({"error": str(exc)[:1000]})
-            elif job.kind == "compile":
-                s = db.get(Submission, json.loads(job.payload).get("submission_id"));
-                if s: s.status = "failed"; s.compile_error = str(exc)[:6000]
+def release_claim(db, job_id, instance_token):
+    job = db.scalar(select(Job).where(Job.id == job_id).with_for_update())
+    if job and job.status == "running" and job.claim_token == instance_token:
+        job.status = "queued"
+        job.worker_id = None
+        job.claim_token = None
+        job.claimed_at = None
+
+class LostClaim(Exception):
+    pass
+
+def process(job_id, instance_token):
+    try:
+        with SessionLocal.begin() as db:
+            job = db.get(Job, job_id)
+            if not job or job.status != "running" or job.claim_token != instance_token:
+                return
+            try:
+                payload = json.loads(job.payload)
+                if job.kind == "compile":
+                    s = db.get(Submission, payload["submission_id"]); compile_submission(db, s)
+                elif job.kind == "match":
+                    m = db.get(Match, payload["match_id"])
+                    if m.status == "done" or m.status == "void":
+                        pass
+                    else:
+                        m.status = "running"; play_match(db, m)
+                job.status = "done"
+            except Exception as exc:
+                job.status = "failed"
+                if job.kind == "match":
+                    m = db.get(Match, json.loads(job.payload).get("match_id"));
+                    if m: m.status = "failed"; m.detail = json.dumps({"error": str(exc)[:1000]})
+                elif job.kind == "compile":
+                    s = db.get(Submission, json.loads(job.payload).get("submission_id"));
+                    if s: s.status = "failed"; s.compile_error = str(exc)[:6000]
+            # A recovered job may already belong to another machine. Lock and
+            # re-read its ownership before committing any result or score.
+            current = db.scalar(select(Job).where(Job.id == job_id)
+                                .with_for_update().execution_options(populate_existing=True))
+            if not current or current.claim_token != instance_token or current.worker_id != WORKER_ID:
+                raise LostClaim()
+            current.claim_token = None
+            current.claimed_at = None
+    except LostClaim:
+        return
 
 def register_worker(instance_token):
     now = datetime.now(timezone.utc)
@@ -234,8 +292,15 @@ def main():
     threading.Thread(target=heartbeat_loop, args=(instance_token, stop_event), daemon=True).start()
     tz = ZoneInfo(os.getenv("EVENT_TIMEZONE", "Asia/Ho_Chi_Minh"))
     last_pair_day = None
+    last_recovery = 0.0
+    pending_release = None
     while not stop_event.is_set():
+        job_id = None
         try:
+            if pending_release is not None:
+                with SessionLocal.begin() as db:
+                    release_claim(db, pending_release, instance_token)
+                pending_release = None
             now = datetime.now(tz)
             with SessionLocal() as db:
                 state = get_event_state(db, os.getenv("MATCHES_ENABLED", "false").lower() == "true", now)
@@ -248,13 +313,19 @@ def main():
                 except Exception:
                     # Retry next loop; the database check makes pairing idempotent.
                     time.sleep(2)
+            if time.monotonic() - last_recovery >= 10:
+                with SessionLocal.begin() as db:
+                    recover_abandoned_jobs(db)
+                last_recovery = time.monotonic()
             with SessionLocal.begin() as db:
-                job = claim(db); job_id = job.id if job else None
-            if job_id: process(job_id)
+                job = claim(db, instance_token); job_id = job.id if job else None
+            if job_id: process(job_id, instance_token)
             else: time.sleep(1)
         except OperationalError:
             # An external PostgreSQL connection can drop during a query.
-            # Discard pooled sockets and resume polling without restarting Docker.
+            # Discard pooled sockets and return our unfinished job once connected.
+            if job_id:
+                pending_release = job_id
             engine.dispose()
             time.sleep(3)
 

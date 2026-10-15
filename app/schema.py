@@ -9,9 +9,13 @@ def ensure_schema():
     with engine.begin() as connection:
         connection.execute(text("ALTER TABLE players ADD COLUMN IF NOT EXISTS password_hash VARCHAR(128)"))
         connection.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS worker_id VARCHAR(64)"))
+        connection.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS claim_token VARCHAR(64)"))
+        connection.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ"))
         connection.execute(text("ALTER TABLE matches ADD COLUMN IF NOT EXISTS worker_id VARCHAR(64)"))
+        connection.execute(text("ALTER TABLE matches ADD COLUMN IF NOT EXISTS replay_of INTEGER REFERENCES matches(id)"))
         connection.execute(text("CREATE INDEX IF NOT EXISTS ix_jobs_worker_id ON jobs (worker_id)"))
         connection.execute(text("CREATE INDEX IF NOT EXISTS ix_matches_worker_id ON matches (worker_id)"))
+        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_matches_replay_of ON matches (replay_of)"))
         # The old constraint also blocked intentional manual rematches on the
         # same day. Keep uniqueness only for automatic daily pairings.
         connection.execute(text("ALTER TABLE matches DROP CONSTRAINT IF EXISTS uq_daily_pair"))

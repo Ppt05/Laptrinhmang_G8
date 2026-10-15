@@ -55,11 +55,11 @@
       <div class="admin-actions"><button class="button button-outline" id="refreshAssignments" type="button">Tải lại kết quả</button></div>
       <p id="assignMessage" class="admin-message" aria-live="polite"></p>
       <h3>Trận gần đây</h3>
-      <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Mã</th><th>Hai đội</th><th>Máy đã nhận</th><th>Trạng thái</th><th>Kết quả</th></tr></thead><tbody id="assignedMatches"></tbody></table></div>
+      <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Mã</th><th>Hai đội</th><th>Máy đã nhận</th><th>Trạng thái</th><th>Kết quả</th><th>Lỗi hạ tầng</th></tr></thead><tbody id="assignedMatches"></tbody></table></div>
     </section>
-    <aside class="admin-help"><strong>Lưu ý về worker</strong><p>Website và database chạy trên Render; worker chạy trên máy của ban tổ chức. Các máy cùng đọc hàng chờ PostgreSQL. Nếu một máy tắt, máy còn lại tiếp tục nhận các trận chưa bắt đầu.</p></aside>
+    <aside class="admin-help"><strong>Lưu ý về worker</strong><p>Website và database chạy trên Render; worker chạy trên máy của ban tổ chức. Các máy cùng đọc hàng chờ PostgreSQL. Nếu một máy tắt, máy còn lại tiếp tục nhận các trận chưa bắt đầu và khôi phục trận bị gián đoạn.</p></aside>
     </section>
   </main>
-  <script src="/assets/admin.js?v=6" defer></script>
+  <script src="/assets/admin.js?v=7" defer></script>
 </body>
 </html>

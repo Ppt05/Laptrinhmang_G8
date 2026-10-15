@@ -29,17 +29,18 @@ flowchart LR
     P -->|lịch sử, bảng điểm| A
 ```
 
-1. API lưu tài khoản và từng phiên bản mã nguồn vào PostgreSQL, đồng thời tạo job biên dịch.
+1. API lưu tài khoản và từng phiên bản mã nguồn vào PostgreSQL, đồng thời tạo job biên dịch. Mỗi đội chỉ được nộp một lần trong mỗi ngày theo giờ Việt Nam, kể cả khi bài đó biên dịch lỗi.
 2. Worker lấy job từ bảng `jobs`, kiểm tra hoặc biên dịch bot trong Docker sandbox. Bài hợp lệ chuyển sang trạng thái `ready`.
 3. Trong khoảng thời gian admin đã mở, vào **giờ bắt đầu của mỗi ngày** hệ thống lấy phiên bản `ready` mới nhất của mỗi đội, xáo trộn ngẫu nhiên và ghép cặp. Mỗi đội có tối đa một trận **ghép tự động** mỗi ngày; nếu lẻ đội, một đội nghỉ lượt. Nếu ngày đó đã tạo trận tự động, khởi động lại worker sẽ không tạo trùng.
 4. Mỗi trận được đưa vào hàng chờ chung. Worker nào rảnh lấy trước, chạy hai bot trong hai sandbox, áp dụng luật OTTv2 rồi lưu diễn biến và kết quả. PostgreSQL khóa job để hai worker không nhận cùng một trận.
-5. Website hiển thị kết quả và bảng xếp hạng từ PostgreSQL. Nếu chỉ một worker bật, nó xử lý lần lượt tất cả job đang chờ. Khi cả hai bật, chúng có thể chạy hai trận song song.
+5. Website hiển thị kết quả và bảng xếp hạng từ PostgreSQL. Tất cả trận hoàn tất, gồm cả thách đấu, đều tính điểm; không có trận luyện tập. Nếu chỉ một worker bật, nó xử lý lần lượt tất cả job đang chờ. Khi cả hai bật, chúng có thể chạy hai trận song song.
+6. Worker kiểm tra heartbeat của máy đang giữ job. Khi máy tắt giữa trận, job được trả về hàng chờ sau khoảng một phút; máy còn lại nhận lại và chạy lại toàn bộ trận. Kết quả từ máy cũ chỉ được lưu nếu máy đó vẫn giữ quyền xử lý job, tránh ghi điểm hai lần.
 
 Sau khi trận kết thúc, người xem bấm **Xem trận** trên thanh điều hướng để phát lại bàn cờ 9×9, xem từng nước đi hoặc phát tự động. Đội đã đăng nhập cũng có nút **Xem lại trận** trong lịch sử đấu. Tính năng này đọc diễn biến đã lưu trong PostgreSQL; nó không truyền trực tiếp khi trận còn đang chạy.
 
 Ví dụ lịch bắt đầu **20:40 ngày 14/10** và kết thúc **20:40 ngày 22/10** theo giờ Việt Nam: hệ thống ghép lúc 20:40 mỗi ngày còn nằm trong lịch. Nếu worker được bật sau giờ ghép của ngày đó, nó sẽ ghép ngay khi kết nối, miễn là chưa có lượt ghép tự động trong ngày.
 
-> **Giới hạn hiện tại:** Nếu máy tắt khi một trận đã ở trạng thái `running`, trận đó chưa được tự động chuyển sang máy khác. Các trận còn ở trạng thái `queued` vẫn được worker còn lại nhận.
+Nếu một trận kết thúc sai vì lỗi hạ tầng, admin có thể chọn **Hủy điểm, đấu lại** trong danh sách trận, nhập lý do và tạo một trận mới từ đúng hai phiên bản bot ban đầu. Trận cũ vẫn nằm trong lịch sử với lý do hủy, nhưng không tính vào bảng điểm; trận mới được tính khi hoàn tất.
 
 ## Cấu trúc dự án
 
@@ -129,12 +130,12 @@ Hai worker dùng chung hàng chờ. Không phải chia sẵn trận cho từng m
 docker compose -f docker-compose.remote-worker.yml down
 ```
 
-Máy còn lại tiếp tục nhận các job **chưa bắt đầu**. Khi cập nhật mã, trên từng máy chạy `git pull --ff-only origin main`, sau đó chạy lại `up --build -d`. Không để Windows tự Sleep trong lúc thi.
+Máy còn lại tiếp tục nhận các job đang chờ và khôi phục job của máy đã tắt sau khoảng một phút. Khi cập nhật mã, trên từng máy chạy `git pull --ff-only origin main`, sau đó chạy lại `up --build -d`. Không để Windows tự Sleep trong lúc thi.
 
 ## Đội thi nộp bot như thế nào?
 
 1. Đăng ký tên đội và mật khẩu trên website, sau đó đăng nhập.
-2. Chọn **Python 3** hoặc **C++17**, dán mã nguồn vào ô nộp bài. Mỗi lần nộp tạo một phiên bản; giới hạn mã nguồn **100 KB**.
+2. Chọn **Python 3** hoặc **C++17**, dán mã nguồn vào ô nộp bài. Mỗi đội được nộp **một lần mỗi ngày theo giờ Việt Nam**; bài biên dịch lỗi vẫn tính là lần nộp của ngày đó. Giới hạn mã nguồn **100 KB**.
 3. Xem trạng thái bài nộp. Hệ thống chỉ dùng phiên bản hợp lệ mới nhất có trạng thái `ready` khi ghép trận.
 4. Sau trận, xem lịch sử đấu và bảng xếp hạng trên website. Thắng được 1 điểm, hòa 0,5 điểm, thua 0 điểm.
 

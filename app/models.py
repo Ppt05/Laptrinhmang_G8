@@ -31,6 +31,8 @@ class Job(Base):
     payload: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
     worker_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    claim_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
@@ -45,6 +47,7 @@ class Match(Base):
     kind: Mapped[str] = mapped_column(String(20))
     status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
     worker_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    replay_of: Mapped[int | None] = mapped_column(ForeignKey("matches.id"), nullable=True, unique=True)
     winner_id: Mapped[int | None] = mapped_column(ForeignKey("players.id"), nullable=True)
     points_a: Mapped[float] = mapped_column(Float, default=0)
     points_b: Mapped[float] = mapped_column(Float, default=0)

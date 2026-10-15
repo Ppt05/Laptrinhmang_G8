@@ -52,10 +52,10 @@ async function loadAssignments(silent = false) {
     if (!matches.length) {
       const row = tbody.insertRow();
       const cell = row.insertCell();
-      cell.colSpan = 5;
+      cell.colSpan = 6;
       cell.textContent = "Chưa có trận nào.";
     }
-    const states = { queued: "Đang chờ", running: "Đang đấu", done: "Hoàn tất", failed: "Lỗi" };
+    const states = { queued: "Đang chờ", running: "Đang đấu", done: "Hoàn tất", failed: "Lỗi", void: "Đã hủy điểm" };
     matches.forEach((match) => {
       const row = tbody.insertRow();
       [
@@ -65,6 +65,29 @@ async function loadAssignments(silent = false) {
         states[match.status] || match.status,
         match.status === "done" ? (match.winner || "Hòa") : "—",
       ].forEach((value) => { row.insertCell().textContent = value; });
+      const action = row.insertCell();
+      if ((match.status === "done" || match.status === "failed") && !matches.some((item) => item.replay_of === match.id)) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "text-button";
+        button.textContent = "Hủy điểm, đấu lại";
+        button.addEventListener("click", async () => {
+          const reason = prompt(`Lý do lỗi hạ tầng của trận #${match.id} (tối thiểu 8 ký tự):`);
+          if (!reason) return;
+          try {
+            const result = await api(`/api/admin/matches/${match.id}/void-and-replay`, {
+              method: "POST", body: JSON.stringify({ reason: reason.trim() }),
+            });
+            setMessage("#assignMessage", `Đã hủy điểm trận #${match.id} và tạo trận đấu lại #${result.replay_match_id}.`);
+            await loadAssignments(true);
+          } catch (error) { setMessage("#assignMessage", error.message, true); }
+        });
+        action.append(button);
+      } else if (match.replay_of) {
+        action.textContent = `Đấu lại #${match.replay_of}`;
+      } else {
+        action.textContent = "—";
+      }
     });
     if (!silent) setMessage("#assignMessage", `${onlineWorkers.length} máy worker trực tuyến: ${onlineWorkers.map((worker) => worker.id).join(", ") || "chưa có"}.`);
   } catch (error) {
