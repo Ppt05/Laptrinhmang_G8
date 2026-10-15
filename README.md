@@ -1,79 +1,102 @@
-# Oẳn Tù Tì OTTv2 — cuộc thi lập trình bot
+# OTTv2 — cuộc thi lập trình bot Oẳn Tù Tì
 
-Mỗi đội viết một bot bằng **Python 3** hoặc **C++17** cho trò chơi chiến thuật Oẳn Tù Tì trên bàn cờ 9×9. Đội đăng ký tài khoản, nộp mã nguồn trên website và theo dõi trạng thái bài nộp, trận đấu, bảng xếp hạng. Khi đến giờ thi, hệ thống tự ghép các bot; thành viên đội không cần trực tuyến để điều khiển từng nước đi.
+Đây là website tổ chức cuộc thi **lập trình bot**, không phải trò chơi mà hai người bấm Đấm/Kéo/Lá trực tiếp. Mỗi đội đăng ký tài khoản, nộp mã nguồn Python 3 hoặc C++17. Khi đến lịch do ban tổ chức đặt, hệ thống tự chọn các đội có bot hợp lệ, ghép cặp ngẫu nhiên và cho hai chương trình đấu trên bàn cờ 9×9. Website hiển thị lịch sử, điểm số và phát lại từng nước đi.
 
-## Truy cập sản phẩm
+## Xem sản phẩm
 
-| Mục đích | Địa chỉ |
+| Mục | Địa chỉ |
 | --- | --- |
-| Website cho đội thi | [oantuti-demo.onrender.com](https://oantuti-demo.onrender.com/) |
+| Website cho đội thi và khán giả | [oantuti-demo.onrender.com](https://oantuti-demo.onrender.com/) |
 | Trang ban tổ chức | [oantuti-demo.onrender.com/admin](https://oantuti-demo.onrender.com/admin) |
-| Mã nguồn | [github.com/Ppt05/Laptrinhmang_G8](https://github.com/Ppt05/Laptrinhmang_G8) |
+| Repository | [Ppt05/Laptrinhmang_G8](https://github.com/Ppt05/Laptrinhmang_G8) |
 
-Trang admin dùng để **đặt giờ bắt đầu, kết thúc và xem kết quả**. Admin không chọn cặp đội và không chọn máy chạy trận. Có thể đặt URL website vào ô **About → Website** của repository GitHub; cả hai link sản phẩm đã có trong bảng trên.
+Trang quản trị **đặt giờ mở/đóng, xem worker và kết quả**. Quản trị viên không chọn thủ công đội nào gặp đội nào hoặc trận chạy trên máy nào. Dự án hiện triển khai website/API và PostgreSQL trên Render; chương trình chấm trận (**worker**) chạy trên máy của ban tổ chức có Docker Desktop. Không có frontend Vercel, Redis, Judge0 hoặc Piston trong cấu hình hiện tại.
 
-## Luồng hoạt động
+## Hệ thống hoạt động thế nào?
 
 ```mermaid
 flowchart LR
-    T[Đội đăng ký, nộp mã bot] --> A[Website và API trên Render]
-    Q[Admin đặt lịch] --> A
-    A <--> P[(PostgreSQL trên Render)]
-    P --> J[(Bảng jobs: hàng chờ chung)]
-    J -->|máy rảnh nhận| W1[Worker may-1]
-    J -->|máy rảnh nhận| W2[Worker may-2]
-    W1 --> D1[Docker sandbox trên máy 1]
-    W2 --> D2[Docker sandbox trên máy 2]
-    W1 -->|kết quả| P
-    W2 -->|kết quả| P
-    P -->|lịch sử, bảng điểm| A
+    Team["Đội thi: đăng ký, nộp mã nguồn"] --> Web["Website + FastAPI trên Render"]
+    Admin["Ban tổ chức: đặt lịch"] --> Web
+    Web <--> DB[("PostgreSQL trên Render: tài khoản, mã nguồn, jobs, trận, điểm")]
+    DB <--> W1["Worker máy 1"]
+    DB <--> W2["Worker máy 2 (nếu có)"]
+    W1 --> S1["Docker sandbox: biên dịch và chạy 2 bot"]
+    W2 --> S2["Docker sandbox: biên dịch và chạy 2 bot"]
+    DB --> Replay["Website: bảng điểm và phát lại"]
 ```
 
-1. API lưu tài khoản và từng phiên bản mã nguồn vào PostgreSQL, đồng thời tạo job biên dịch. Mỗi đội chỉ được nộp một lần trong mỗi ngày theo giờ Việt Nam, kể cả khi bài đó biên dịch lỗi.
-2. Worker lấy job từ bảng `jobs`, kiểm tra hoặc biên dịch bot trong Docker sandbox. Bài hợp lệ chuyển sang trạng thái `ready`.
-3. Trong khoảng thời gian admin đã mở, vào **giờ bắt đầu của mỗi ngày** hệ thống lấy phiên bản `ready` mới nhất của mỗi đội, xáo trộn ngẫu nhiên và ghép cặp. Mỗi đội có tối đa một trận **ghép tự động** mỗi ngày; nếu lẻ đội, một đội nghỉ lượt. Nếu ngày đó đã tạo trận tự động, khởi động lại worker sẽ không tạo trùng.
-4. Mỗi trận được đưa vào hàng chờ chung. Worker nào rảnh lấy trước, chạy hai bot trong hai sandbox, áp dụng luật OTTv2 rồi lưu diễn biến và kết quả. PostgreSQL khóa job để hai worker không nhận cùng một trận.
-5. Website hiển thị kết quả và bảng xếp hạng từ PostgreSQL. Tất cả trận hoàn tất, gồm cả thách đấu, đều tính điểm; không có trận luyện tập. Nếu chỉ một worker bật, nó xử lý lần lượt tất cả job đang chờ. Khi cả hai bật, chúng có thể chạy hai trận song song.
-6. Worker kiểm tra heartbeat của máy đang giữ job. Khi máy tắt giữa trận, job được trả về hàng chờ sau khoảng một phút; máy còn lại nhận lại và chạy lại toàn bộ trận. Kết quả từ máy cũ chỉ được lưu nếu máy đó vẫn giữ quyền xử lý job, tránh ghi điểm hai lần.
+1. **Đăng ký và nộp bài.** API lưu tài khoản và mã nguồn vào PostgreSQL, rồi thêm một job biên dịch vào bảng `jobs`. Một đội được nộp **một lần mỗi ngày theo giờ Việt Nam**, kể cả khi mã không biên dịch được. Giới hạn mỗi bài là **100 KB**.
+2. **Biên dịch.** Worker rảnh lấy job từ PostgreSQL, dùng Docker sandbox để kiểm tra/biên dịch. Bài thành công có trạng thái `ready`; bài lỗi có trạng thái `failed` và hiện thông báo lỗi trong tài khoản đội.
+3. **Ghép trận tự động.** Khi lịch thi đang mở và qua giờ bắt đầu trong ngày, worker lấy **bản `ready` mới nhất của mỗi đội**, xáo trộn rồi ghép từng cặp. Mỗi ngày chỉ tạo **một lượt ghép tự động**; đội lẻ nghỉ lượt và không được cộng điểm. Nếu chưa đủ hai bot hợp lệ, worker tiếp tục chờ. Đội nộp sau khi lượt ghép trong ngày đã được tạo sẽ đợi lượt ngày sau. Bản `ready` từ ngày trước vẫn được dùng nếu đội chưa có bản mới hợp lệ.
+4. **Chạy trận.** Mỗi trận là một job chung. Worker nào rảnh thì nhận trước; không chia cố định đội theo máy. Worker chạy hai bot trong hai Docker sandbox, gửi trạng thái bàn cờ cho bot theo từng lượt, kiểm tra nước đi, tính thắng/hòa/thua và ghi diễn biến vào PostgreSQL.
+5. **Công bố kết quả.** Website đọc dữ liệu đã lưu để hiện lịch sử đấu, bảng xếp hạng theo toàn mùa hoặc ngày ghép trận và cửa sổ **Xem trận**. Phần xem trận dựng lại bàn cờ từ danh sách nước đi, **không phải video lấy từ Docker và không truyền trực tiếp trận đang chạy**.
 
-Sau khi trận kết thúc, người xem bấm **Xem trận** trên thanh điều hướng để phát lại bàn cờ 9×9, xem từng nước đi hoặc phát tự động. Đội đã đăng nhập cũng có nút **Xem lại trận** trong lịch sử đấu. Tính năng này đọc diễn biến đã lưu trong PostgreSQL; nó không truyền trực tiếp khi trận còn đang chạy.
+Một worker có thể xử lý toàn bộ hàng đợi, lần lượt từng job. Hai hoặc ba worker với `WORKER_ID` khác nhau và cùng kết nối PostgreSQL có thể xử lý các job song song. PostgreSQL khóa job khi nhận việc để hạn chế hai máy lấy cùng một job. Worker báo nhịp hoạt động định kỳ; nếu một máy mất kết nối khi đang làm, job có thể được đưa lại vào hàng chờ sau khoảng một phút. Kết quả từ worker đã mất quyền xử lý không được ghi đè kết quả của worker mới.
 
-Ví dụ lịch bắt đầu **20:40 ngày 14/10** và kết thúc **20:40 ngày 22/10** theo giờ Việt Nam: hệ thống ghép lúc 20:40 mỗi ngày còn nằm trong lịch. Nếu worker được bật sau giờ ghép của ngày đó, nó sẽ ghép ngay khi kết nối, miễn là chưa có lượt ghép tự động trong ngày.
+**Lịch không tự bật Docker Desktop.** Máy worker phải đang mở, Docker Desktop và Internet phải hoạt động. Nếu không có worker, website vẫn có thể nhận bài và hiển thị dữ liệu cũ, nhưng job mới sẽ chờ. Dòng “Đang mở” trên website cho biết lịch và cờ cấu hình cho phép thi; hãy xem danh sách worker trực tuyến ở trang admin để xác nhận máy chấm thực sự đang chạy.
 
-Nếu một trận kết thúc sai vì lỗi hạ tầng, admin có thể chọn **Hủy điểm, đấu lại** trong danh sách trận, nhập lý do và tạo một trận mới từ đúng hai phiên bản bot ban đầu. Trận cũ vẫn nằm trong lịch sử với lý do hủy, nhưng không tính vào bảng điểm; trận mới được tính khi hoàn tất.
+### Ví dụ một ngày thi
 
-## Cấu trúc dự án
+- Admin đặt lịch từ 20:40 ngày 14/10 đến 20:40 ngày 22/10 (giờ Việt Nam) và bật thi đấu.
+- Hai đội đã có bot `ready`. Sau 20:40 mỗi ngày trong khoảng lịch, worker tạo cặp ngẫu nhiên. Nếu worker bật muộn hơn giờ đó, nó tạo lượt khi kết nối lại, miễn là ngày ấy chưa từng tạo lượt ghép tự động.
+- Trận hoàn tất được cộng điểm và xuất hiện trong **Xem trận**. Trận phát sinh từ API thách đấu (nếu sử dụng) cũng tính điểm; hệ thống hiện **không có chế độ luyện tập riêng**.
+
+## Đội thi cần làm gì?
+
+1. Vào website, **đăng ký tên đội và mật khẩu** rồi đăng nhập. Không cần mã cuộc thi.
+2. Chọn Python hoặc C++, dán mã nguồn bot và nộp. Theo dõi trạng thái `Đang chờ → Sẵn sàng` hoặc lỗi biên dịch trong tài khoản.
+3. Đợi hệ thống ghép trận theo lịch; thành viên không cần online để bấm nước đi. Xem lịch sử, bảng xếp hạng và phát lại sau khi trận kết thúc.
+
+Bot nhận **một dòng JSON trên `stdin` mỗi lượt**, gồm `side`, `pieces`, `move_number` và `legal_moves`. Bot phải chọn một nước trong `legal_moves` rồi in **đúng một dòng JSON** ra `stdout`, ví dụ:
+
+```json
+{"piece_id":"S01","to":"a4"}
+```
+
+Bot nên `flush` sau khi in. Chỉ in câu trả lời giao thức ra `stdout`; thông tin gỡ lỗi ghi vào `stderr`. Mỗi lượt có tối đa **1,5 giây** để trả lời; lượt đầu của mỗi bot có tối đa **15 giây** để khởi động. Dòng trả lời thiếu/sai, nước đi không hợp lệ, bot tự thoát hoặc quá giờ khiến bot thua trận. Xem [bot Python mẫu](examples/bot_greedy.py) và [bot ngẫu nhiên](examples/bot_random.py).
+
+### Luật OTTv2 đang được code áp dụng
+
+- Bàn cờ 9×9, mỗi bên bắt đầu với 10 quân thuộc ba loại Đấm (`rock`), Kéo (`scissors`), Lá (`paper`). Xanh/`south` đi trước, Hồng/`north` đi sau.
+- Mỗi lượt một quân đi đúng một ô theo một trong tám hướng. Đấm ăn Kéo, Kéo ăn Lá, Lá ăn Đấm. Quân đồng đội hoặc quân đối phương mà quân đi không khắc chế được sẽ chặn ô; **hòa loại không được ăn và không đi vào ô đó**.
+- Thắng khi đưa một quân đến ô đích (Bắc đến `a1`, Nam đến `i9`) hoặc ăn hết **một loại quân** của đối thủ.
+- Hòa nếu cùng thế cờ lặp ba lần, bên đến lượt không còn nước hợp lệ, hoặc chạm giới hạn mặc định **200 nước đi**.
+- Thắng: **1 điểm**; hòa: **0,5 điểm mỗi đội**; thua: **0 điểm**. Bảng toàn mùa cộng các trận `done`; bộ lọc theo ngày dùng **ngày ghép trận**, không nhất thiết là ngày trận kết thúc.
+
+## Cấu trúc mã nguồn
 
 ```text
 oantuti_server/
 ├── app/
-│   ├── main.py                 # FastAPI: tài khoản, bài nộp, kết quả, lịch admin
-│   ├── worker.py               # Ghép đội, lấy job, chạy bot, ghi kết quả
-│   ├── game_setup.py           # Thế cờ ban đầu dùng chung cho worker và phát lại
-│   ├── models.py               # Các bảng PostgreSQL
-│   ├── schema.py               # Tạo và nâng cấp cấu trúc bảng
-│   ├── event_schedule.py       # Tính trạng thái lịch theo giờ Việt Nam
-│   ├── security.py             # Xác thực tài khoản đội
-│   └── db.py                   # Kết nối PostgreSQL
-├── web/                        # HTML, CSS, JavaScript của website và trang admin
-├── sandbox/                    # Image Docker biên dịch và chạy bot
-├── examples/                   # Bot ví dụ
-├── Dockerfile                  # Image website/API
-├── Dockerfile.worker           # Image worker
-├── docker-compose.yml          # Chạy đủ hệ thống trên một máy
-├── docker-compose.remote-worker.yml  # Worker nối tới Render
-├── render.yaml                 # Cấu hình website và PostgreSQL trên Render
-├── .env.example                # Mẫu cấu hình chạy local
-└── .env.worker.example         # Mẫu cấu hình worker nối Render
+│   ├── main.py            # FastAPI: website, đăng ký, đăng nhập, nộp bài, kết quả, admin
+│   ├── worker.py          # Hàng chờ, ghép đội, biên dịch, chạy trận, luật đi quân
+│   ├── game_setup.py      # Thế cờ ban đầu dùng cho trận và phát lại
+│   ├── event_schedule.py  # Tính trạng thái lịch theo giờ Việt Nam
+│   ├── models.py          # Bảng players, submissions, jobs, matches, event_control, worker_nodes
+│   ├── schema.py          # Khởi tạo/nâng cấp cấu trúc PostgreSQL
+│   ├── security.py        # Mật khẩu và xác thực đội
+│   └── db.py              # Kết nối cơ sở dữ liệu
+├── web/                   # Trang người chơi và admin: HTML, CSS, JavaScript
+├── sandbox/               # Image Docker biên dịch/chạy mã thí sinh
+├── examples/              # Bot mẫu
+├── tests/                 # Ca kiểm tra giao thức và luồng chạy worker
+├── Dockerfile             # Image website/API
+├── Dockerfile.worker      # Image worker
+├── docker-compose.yml     # Website + PostgreSQL + worker chạy riêng trên máy local
+├── docker-compose.remote-worker.yml  # Worker máy cá nhân kết nối PostgreSQL Render
+├── render.yaml            # Blueprint website và database trên Render
+├── .env.example           # Mẫu biến môi trường local
+└── .env.worker.example    # Mẫu biến môi trường worker nối Render
 ```
 
-**Hàng chờ hiện là bảng `jobs` trong PostgreSQL, không dùng Redis.** Các tên như Match Loader, Match Runner, Game Engine, Sandbox Manager mô tả trách nhiệm bên trong `app/worker.py`, chưa phải các dịch vụ triển khai độc lập. Mỗi bot được chạy trong Docker sandbox không có mạng, giới hạn CPU/RAM/thời gian; website/API không chạy mã thí sinh trực tiếp.
+Hàng chờ hiện là **bảng `jobs` trong PostgreSQL**, không dùng Redis. Các bước “match loader”, “runner”, “game engine” nằm trong `app/worker.py`, chưa phải microservice độc lập. Mã bot chạy trong Docker với mạng bị tắt, hệ thống tệp chỉ đọc và giới hạn CPU, bộ nhớ, tiến trình. API trên Render không thực thi mã thí sinh.
 
-## Cách chạy trên máy cá nhân
+## Cách chạy toàn bộ trên một máy để phát triển
 
-Cách này tạo **website và cơ sở dữ liệu riêng trên máy**, không dùng dữ liệu cuộc thi đang ở Render.
+Cần **Git, Docker Desktop (Linux containers), PowerShell**. Cách này dùng database local, **không dùng dữ liệu thi trên Render**.
 
-**Cần có:** Git, Docker Desktop đang chạy ở chế độ Linux containers và PowerShell.
+Nếu máy đang chạy worker của cuộc thi thật, hãy thử chế độ local trong **một bản clone và Docker Compose project khác**. Hai tệp Compose đều đặt tên dịch vụ `worker`; chạy cả hai trong cùng project có thể thay thế worker đang kết nối Render.
 
 ```powershell
 git clone https://github.com/Ppt05/Laptrinhmang_G8.git
@@ -82,97 +105,73 @@ Copy-Item .env.example .env
 notepad .env
 ```
 
-Trong `.env`, thay `POSTGRES_PASSWORD`, `ADMIN_API_KEY`, `ADMIN_PASSWORD` bằng các giá trị riêng. Để chạy trận local, đặt `MATCHES_ENABLED=true`; giữ `AUTO_PAIR_ENABLED=true`. Sau đó:
+Trong `.env`, đặt giá trị riêng đủ mạnh cho `POSTGRES_PASSWORD`, `ADMIN_API_KEY`, `ADMIN_PASSWORD`. Muốn chạy trận local, đặt `MATCHES_ENABLED=true`; giữ `AUTO_PAIR_ENABLED=true`. Sau đó:
 
 ```powershell
 docker compose up --build -d
 docker compose ps
 ```
 
-Mở [http://localhost:8000/](http://localhost:8000/) để đăng ký đội và nộp bot. Mở [http://localhost:8000/admin](http://localhost:8000/admin), đăng nhập bằng `ADMIN_USERNAME` và `ADMIN_PASSWORD` trong `.env`, rồi lưu giờ mở/đóng trận. Lịch phải đang mở và cần ít nhất hai bot ở trạng thái `ready` để tạo trận tự động.
+Mở [website local](http://localhost:8000/) và [admin local](http://localhost:8000/admin). Đăng nhập admin bằng `ADMIN_USERNAME`/`ADMIN_PASSWORD` trong `.env`, đặt lịch mở/đóng. Nộp ít nhất hai bot mẫu từ hai tài khoản khác nhau và chờ hai bài chuyển sang `ready`. Nếu đã qua giờ ghép và lịch đang mở, worker sẽ tạo trận. Xem log bằng `docker compose logs -f api worker` (nhấn Ctrl+C để thoát màn hình log); dừng bằng `docker compose down`. **Không thêm `-v`** nếu muốn giữ dữ liệu local.
 
-Xem log bằng `docker compose logs -f api worker`. Nhấn `Ctrl+C` chỉ thoát màn hình log. Dừng dịch vụ bằng `docker compose down`; không thêm `-v` nếu muốn giữ dữ liệu PostgreSQL local.
+## Cách vận hành website Render và worker trên máy ban tổ chức
 
-## Chạy worker cho website Render
+Repository đã có `render.yaml` cho Web Service và PostgreSQL. Với hệ thống đang chạy ở link đầu README, **không cần tạo thêm Render service**. Kiểm tra trong Render Web Service:
 
-Website/API và PostgreSQL chạy trên Render. **Worker chạy trên máy của ban tổ chức**, nên phải bật máy, Docker Desktop và Internet trong thời gian cần biên dịch hoặc chạy trận. Người thi chỉ truy cập website Render, không cần kết nối trực tiếp tới máy worker.
+- `DATABASE_URL`: kết nối tới PostgreSQL của dự án; Render Blueprint cấu hình biến này.
+- `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_API_KEY`: tài khoản và khóa admin; đặt/lưu giá trị riêng trong Render Environment, **không ghi mật khẩu vào README hay GitHub**.
+- `MATCHES_ENABLED=true`: cho API nhận trạng thái thi đấu theo lịch. `render.yaml` mặc định đặt `false` khi tạo mới, nên phải kiểm tra giá trị thực tế trên Render.
+- `REGISTRATION_OPEN=true`: cho phép đội đăng ký.
 
-### Máy thứ nhất
+Trên **mỗi máy worker**:
 
-1. Clone repository như phần trên, hoặc mở thư mục dự án đã có và chạy `git pull --ff-only origin main`.
-2. Trong Render Dashboard, mở PostgreSQL của dự án → **Connect** → lấy **External Database URL**. Máy cá nhân không dùng được Internal Database URL.
-3. Tại thư mục chứa `docker-compose.remote-worker.yml`, tạo cấu hình riêng:
+```powershell
+git clone https://github.com/Ppt05/Laptrinhmang_G8.git
+cd Laptrinhmang_G8
+Copy-Item .env.worker.example .env.worker
+notepad .env.worker
+```
 
-   ```powershell
-   Copy-Item .env.worker.example .env.worker
-   notepad .env.worker
-   ```
+Lấy **External Database URL** từ trang PostgreSQL trong Render Dashboard, dán vào `DATABASE_URL` trong `.env.worker` (máy cá nhân không dùng Internal URL). Đặt `MATCHES_ENABLED=true`, `AUTO_PAIR_ENABLED=true`. Máy thứ nhất dùng `WORKER_ID=may-1`, máy thứ hai dùng `may-2`, máy thứ ba dùng `may-3`; mỗi máy có **ID riêng** nhưng cùng URL database. File này chứa bí mật, chỉ lưu trên máy ban tổ chức.
 
-   Dán External Database URL vào `DATABASE_URL`, đặt `WORKER_ID=may-1`, `MATCHES_ENABLED=true`, `AUTO_PAIR_ENABLED=true`. Mỗi máy chỉ cần file `.env.worker` của chính nó; không cần mật khẩu admin.
+Mở Docker Desktop, chờ Engine sẵn sàng rồi chạy:
 
-4. Mở Docker Desktop, chờ Docker Engine chạy rồi thực hiện:
+```powershell
+docker compose -f docker-compose.remote-worker.yml up --build -d
+docker compose -f docker-compose.remote-worker.yml ps
+docker compose -f docker-compose.remote-worker.yml logs -f worker
+```
 
-   ```powershell
-   docker compose -f docker-compose.remote-worker.yml up --build -d
-   docker compose -f docker-compose.remote-worker.yml ps
-   docker compose -f docker-compose.remote-worker.yml logs -f worker
-   ```
-
-5. Trên Render Web Service `oantuti-demo`, đặt `MATCHES_ENABLED=true` trong **Environment**. Mở trang admin, đặt lịch và xem số worker trực tuyến. `MATCHES_ENABLED` trên Render là cờ cho website/API; cờ trong `.env.worker` là của worker trên máy.
-
-### Máy thứ hai
-
-Bạn cùng nhóm cài Git và Docker Desktop, clone cùng repository, tạo `.env.worker` theo các bước trên, dùng **cùng External Database URL** nhưng đặt `WORKER_ID=may-2`. Sau đó chạy cùng lệnh `docker compose -f docker-compose.remote-worker.yml up --build -d`.
-
-Hai worker dùng chung hàng chờ. Không phải chia sẵn trận cho từng máy: máy nào rảnh sẽ lấy job tiếp theo. `WORKER_ID` chỉ để nhận diện máy nào đã xử lý trận; hai máy không được dùng trùng ID. Muốn dừng một máy:
+Ở trang admin, kiểm tra worker hiện **trực tuyến**, lưu giờ mở/đóng và quan sát trận. Nếu chỉ còn một máy, máy đó vẫn nhận mọi job đang chờ. Muốn dừng một worker:
 
 ```powershell
 docker compose -f docker-compose.remote-worker.yml down
 ```
 
-Máy còn lại tiếp tục nhận các job đang chờ và khôi phục job của máy đã tắt sau khoảng một phút. Khi cập nhật mã, trên từng máy chạy `git pull --ff-only origin main`, sau đó chạy lại `up --build -d`. Không để Windows tự Sleep trong lúc thi.
+Không để Windows Sleep trong lúc thi. Máy bạn khác có thể thay máy hỏng bằng cách clone repo, lấy **URL database từ người quản trị Render qua kênh riêng**, đặt một `WORKER_ID` chưa được dùng và chạy các lệnh trên. Không chia sẵn đội hoặc trận cho từng máy.
 
-## Đội thi nộp bot như thế nào?
+### Cập nhật phiên bản
 
-1. Đăng ký tên đội và mật khẩu trên website, sau đó đăng nhập.
-2. Chọn **Python 3** hoặc **C++17**, dán mã nguồn vào ô nộp bài. Mỗi đội được nộp **một lần mỗi ngày theo giờ Việt Nam**; bài biên dịch lỗi vẫn tính là lần nộp của ngày đó. Giới hạn mã nguồn **100 KB**.
-3. Xem trạng thái bài nộp. Hệ thống chỉ dùng phiên bản hợp lệ mới nhất có trạng thái `ready` khi ghép trận.
-4. Sau trận, xem lịch sử đấu và bảng xếp hạng trên website. Thắng được 1 điểm, hòa 0,5 điểm, thua 0 điểm.
+- **Website/API trên Render:** đẩy commit lên `main`; kiểm tra mục Deploys của Web Service. Nếu Auto Deploy đang tắt hoặc không nhận commit, dùng **Manual Deploy → Deploy latest commit**.
+- **Worker trên từng máy:** `git pull --ff-only origin main`, rồi `docker compose -f docker-compose.remote-worker.yml up --build -d`. Đẩy GitHub hoặc deploy Render **không tự cập nhật worker đang chạy trên máy cá nhân**. Nên cập nhật khi không có job đang chạy.
+- **Dữ liệu thi:** nằm trong PostgreSQL trên Render, không nằm trong GitHub. Tệp bot sau biên dịch được worker giữ trên volume Docker riêng; worker máy khác có thể biên dịch lại từ mã nguồn đã lưu trong database.
 
-Bấm **Bảng xếp hạng** trên thanh điều hướng để mở cửa sổ kết quả. **Toàn mùa** cộng điểm mọi trận đã hoàn tất; **Theo ngày** chỉ hiện các trận có ngày ghép tương ứng. Bộ lọc theo ngày không thay đổi bảng điểm toàn mùa.
+## Kiểm tra và xử lý sự cố
 
-Ở mỗi lượt, bot đọc **một dòng JSON** từ `stdin`, trong đó có bàn cờ và danh sách `legal_moves`. Bot chọn một nước hợp lệ và in **một dòng JSON** ra `stdout`, ví dụ:
+| Dấu hiệu | Kiểm tra đầu tiên |
+| --- | --- |
+| Bài nộp đứng ở `queued` | Docker Desktop, `docker compose ... ps`, log worker, External Database URL |
+| Lịch báo mở nhưng chưa có trận | Ít nhất hai đội có bài `ready`? Đã qua giờ ghép trong ngày? Hôm đó đã tạo lượt ghép tự động chưa? |
+| Worker không hiện trực tuyến | `WORKER_ID` có trùng máy khác không? Docker/Internet/URL database có hoạt động không? |
+| Trận `failed` | Xem log worker và trạng thái sandbox; đây có thể là lỗi hạ tầng, không tự tính điểm |
+| Bot thua ngay nước đầu | Xem giao thức `stdin/stdout`, newline/flush, `legal_moves`, giới hạn thời gian |
+| Website chưa hiện mã mới | Xem commit đang Live trong Render Deploys; worker phải cập nhật riêng |
 
-```json
-{"piece_id":"S01","to":"a4"}
-```
+Khi **một trận đã kết thúc sai vì lỗi hạ tầng**, admin có nút **Hủy điểm, đấu lại**. Admin phải nhập lý do; trận cũ được giữ để tra cứu nhưng không tính điểm, trận mới dùng đúng hai phiên bản bot của trận cũ. Không sửa âm thầm kết quả. Tính năng này chỉ dùng sau khi xác minh lỗi hạ tầng.
 
-Không in nội dung gỡ lỗi ra `stdout`; chỉ ghi vào `stderr`. Mỗi lượt có tối đa **1,5 giây** để tính nước đi; lượt đầu của mỗi bot được **15 giây** để khởi động Docker và Python. Nước đi sai định dạng, không nằm trong `legal_moves` hoặc trả lời quá giờ sẽ khiến bot thua trận. Xem thư mục [`examples/`](examples/) để bắt đầu viết bot.
+## Lưu ý về bí mật và phạm vi hiện tại
 
-### Luật bàn cờ OTTv2
-
-- Bàn 9×9; mỗi bên có 10 quân Đấm, Kéo, Lá; Xanh (South) đi trước.
-- Mỗi lượt di chuyển một quân đúng một ô theo một trong tám hướng.
-- Đấm ăn Kéo, Kéo ăn Lá, Lá ăn Đấm. Quân cùng loại hoặc quân không bị khắc chế sẽ chặn ô.
-- Thắng khi ăn hết một loại quân của đối thủ hoặc đưa quân tới ô đích: Bắc tới `a1`, Nam tới `i9`.
-- Hòa nếu lặp cùng thế cờ ba lần, không còn nước hợp lệ hoặc hết giới hạn 200 nước đi.
-
-## Bảo mật và vận hành
-
-- Không đưa `.env`, `.env.worker`, URL PostgreSQL, mật khẩu admin hay token đội lên GitHub. Hai file cấu hình thật đã nằm trong `.gitignore`.
-- `ADMIN_USERNAME` mặc định là `admin`; mật khẩu thật nằm trong biến môi trường `ADMIN_PASSWORD` trên Render hoặc `.env` khi chạy local. Người chỉ chạy worker không cần tài khoản admin.
-- Worker có quyền tạo Docker sandbox trên máy chủ chạy nó. Chỉ chạy worker trên máy tin cậy của ban tổ chức.
-- Trang web báo **Đang mở** khi lịch và `MATCHES_ENABLED` cho phép; trạng thái đó không tự chứng minh worker đang trực tuyến. Trang admin hiển thị số worker đang báo heartbeat. Nếu không có worker, bài nộp và trận sẽ chờ xử lý.
-
-## Cập nhật mã và triển khai
-
-Sau khi sửa mã hoặc tài liệu trong repository:
-
-```powershell
-git status
-git add README.md app/ web/ .env.example .env.worker.example
-git commit -m "Update project documentation"
-git push origin main
-```
-
-Không thêm `.env` hoặc `.env.worker` vào Git. Nếu Render đang tắt **Auto Deploy**, vào Web Service → **Manual Deploy → Deploy latest commit** để cập nhật website/API. Worker trên mỗi máy được cập nhật riêng bằng `git pull` và `docker compose ... up --build -d`; deploy Render không tự cập nhật worker.
+- Không commit `.env`, `.env.worker`, URL PostgreSQL, mật khẩu admin hoặc token đội. Hai file môi trường thật đã nằm trong `.gitignore`. Không đặt mật khẩu admin công khai trong README, kể cả để bạn cùng nhóm cài máy.
+- Worker có quyền truy cập Docker socket trên máy chạy nó; chỉ cài trên máy đáng tin cậy của ban tổ chức.
+- Website có API `/api/challenges` cho thách đấu trực tiếp trong giờ mở thi. Giao diện hiện tập trung vào lượt **ghép ngẫu nhiên theo ngày**; trận thách đấu nếu được tạo cũng được tính vào bảng điểm. Không có chế độ “đấu thử không tính điểm”.
+- Tài liệu này mô tả code trong repository. Trước ngày thi, kiểm tra commit đang Live trên Render và phiên bản worker của từng máy vì hai phần được triển khai riêng.
