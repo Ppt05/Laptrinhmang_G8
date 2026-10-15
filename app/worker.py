@@ -111,12 +111,27 @@ def start_bot(s):
         proc.wait(timeout=2)
         raise
 
-def read_line_timeout(stream, timeout):
-    sel = selectors.DefaultSelector(); sel.register(stream, selectors.EVENT_READ)
-    try:
-        if not sel.select(timeout): return None
-        return stream.readline(256)
-    finally: sel.close()
+def read_line_timeout(stream, timeout, pending):
+    # readline() can block forever after select() sees a partial line. Read
+    # available bytes directly and keep any bytes after the newline for later.
+    deadline = time.monotonic() + timeout
+    with selectors.DefaultSelector() as sel:
+        sel.register(stream, selectors.EVENT_READ)
+        while True:
+            newline = pending.find(b"\n")
+            if newline >= 0:
+                line = bytes(pending[:newline + 1])
+                del pending[:newline + 1]
+                return line if len(line) <= 256 else None
+            if len(pending) >= 256:
+                return None
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not sel.select(remaining):
+                return None
+            chunk = os.read(stream.fileno(), 256)
+            if not chunk:
+                return None
+            pending.extend(chunk)
 
 def play_match(db: Session, m: Match):
     a, b = db.get(Submission, m.submission_a), db.get(Submission, m.submission_b)
@@ -129,6 +144,7 @@ def play_match(db: Session, m: Match):
         pa.kill(); pa.wait(timeout=2)
         raise
     game = new_game(); turns = []; side_a, side_b = "south", "north"
+    output_buffers = {pa.stdout: bytearray(), pb.stdout: bytearray()}
     try:
         max_moves = int(os.getenv("MATCH_MAX_MOVES", "200"))
         timeout = float(os.getenv("MATCH_MOVE_TIMEOUT_SECONDS", "1.5"))
@@ -143,9 +159,14 @@ def play_match(db: Session, m: Match):
                 break
             payload = {"protocol_version": 2, "move_number": game["move_number"], "side": side,
                        "board_size": 9, "pieces": game["pieces"], "legal_moves": choices}
-            player_proc.stdin.write((json.dumps(payload, separators=(",", ":")) + "\n").encode()); player_proc.stdin.flush()
-            # Each bot's first turn also includes Docker/Python startup time.
-            raw = read_line_timeout(player_proc.stdout, first_move_timeout if game["move_number"] <= 2 else timeout)
+            try:
+                player_proc.stdin.write((json.dumps(payload, separators=(",", ":")) + "\n").encode())
+                player_proc.stdin.flush()
+                # Each bot's first turn also includes Docker/Python startup time.
+                raw = read_line_timeout(player_proc.stdout, first_move_timeout if game["move_number"] <= 2 else timeout,
+                                        output_buffers[player_proc.stdout])
+            except (BrokenPipeError, OSError):
+                raw = None
             try:
                 reply = json.loads(raw.decode("utf-8")) if raw else None
                 selected = next((mv for mv in choices if mv["piece_id"] == reply.get("piece_id") and mv["to"] == reply.get("to")), None) if isinstance(reply, dict) else None
@@ -176,6 +197,9 @@ def play_match(db: Session, m: Match):
         for p, cid in ((pa, ca), (pb, cb)):
             try: p.kill(); p.wait(timeout=2)
             except Exception: pass
+            for pipe in (p.stdin, p.stdout):
+                if pipe:
+                    pipe.close()
             if cid:
                 subprocess.run(["docker", "rm", "-f", cid], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
