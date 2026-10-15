@@ -122,5 +122,6 @@
 .replay-list-meta,.replay-list-message{font-size:10px;color:#6f8198;line-height:1.6}.replay-list-message{padding:16px 5px}
 .replay-sidebar .button{margin-top:11px}
 .match-replay-link{display:block;margin-top:5px;color:var(--blue);font-size:10px;font-weight:800;border:0;padding:0;background:transparent;cursor:pointer}
+.submit-tools{justify-content:flex-end}
 @media(max-width:780px){.replay-layout{grid-template-columns:1fr}.replay-list{max-height:230px}.replay-piece{border-width:2px;font-size:clamp(13px,5vw,25px)}.replay-score{font-size:11px}.replay-score>span{font-size:9px}.replay-cell small{font-size:6px}}
 @media(max-width:700px){.topbar{height:auto;min-height:64px;flex-wrap:wrap;gap:10px;padding:10px 16px}.topbar .brand{max-width:calc(100% - 142px)}.topbar nav{order:3;width:100%;justify-content:space-between;gap:9px;white-space:nowrap}.topbar nav a,.topbar nav button{font-size:10px}#thi-dau{scroll-margin-top:112px}}

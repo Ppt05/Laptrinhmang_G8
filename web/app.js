@@ -3,17 +3,6 @@ const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 const tokenKey = "ottv2_session";
 const teamKey = "ottv2_team";
 const token = () => sessionStorage.getItem(tokenKey);
-const moveSample = `import json, sys
-
-for line in sys.stdin:
-    state = json.loads(line)
-    moves = state["legal_moves"]
-    if not moves:
-        break
-    move = max(moves, key=lambda m: m["capture"] is not None)
-    print(json.dumps({"piece_id": move["piece_id"], "to": move["to"]}), flush=True)
-`;
-
 async function request(url, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (options.body) headers["Content-Type"] = "application/json";
@@ -315,11 +304,6 @@ $("#logoutBtn").addEventListener("click", () => {
   paintSession();
   $("#accountDialog").close();
   showToast("Bạn đã đăng xuất.");
-});
-
-$("#sampleBtn").addEventListener("click", () => {
-  $("#submitForm textarea[name=source]").value = moveSample;
-  $("#submitForm select[name=language]").value = "python";
 });
 
 $("#submitForm").addEventListener("submit", async (event) => {
