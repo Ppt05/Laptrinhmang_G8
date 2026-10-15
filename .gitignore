@@ -1,6 +1,5 @@
 .env
 .env.worker
-team-access.env
 data/
 __pycache__/
 *.py[cod]
