@@ -1,18 +1,21 @@
-import base64, json, os, re, secrets, selectors, struct, subprocess, tempfile, threading, time
+import base64, json, logging, os, re, secrets, selectors, struct, subprocess, tempfile, threading, time
+from contextvars import ContextVar
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
-from sqlalchemy import select, text
+from sqlalchemy import select, text, func
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 from .db import SessionLocal, engine
-from .models import Job, Match, Submission, WorkerNode
+from .models import Job, Match, Submission, WorkerNode, RoundSubmission, TournamentRound, GameAttempt
+from . import tournament
 from .game_setup import coord, new_game, square
 from .event_schedule import get_event_state, submission_day_bounds
 from .schema import ensure_schema
 
 DATA = Path(os.getenv("APP_DATA", "/app/data")); ARTIFACTS = DATA / "artifacts"
 IMAGE = os.getenv("SANDBOX_IMAGE", "oantuti-sandbox:dev")
+JUDGE_ENV = ContextVar("judge_environment", default=None)
 WORKER_ID = os.getenv("WORKER_ID", "may-1")
 # OTTv2 tactical board game: coordinates use a1=(0,0), i9=(8,8).
 BEATS = {"rock": "scissors", "scissors": "paper", "paper": "rock"}
@@ -66,20 +69,23 @@ def sandbox_args():
     return cmd
 
 def docker_cmd(mode, lang):
-    cmd = sandbox_args() + [IMAGE, mode, lang]
-    return subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
+    env = JUDGE_ENV.get()
+    name = "ott-bot-" + secrets.token_hex(12)
+    cmd = sandbox_args() + ["--name", name, env["image"] if env else IMAGE, mode, lang]
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
+    proc.sandbox_name = name
+    return proc
 
-def compile_submission(db: Session, s: Submission):
+def compile_submission(db: Session, s: Submission, validate=False):
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     proc = docker_cmd("compile", s.language)
     try:
         out, _ = proc.communicate(s.source.encode(), timeout=35)
     except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.communicate()
-        s.status = "failed"
-        s.compile_error = "Biên dịch vượt thời gian 35 giây"
-        return
+        stop_bot(proc)
+        raise RuntimeError("Worker chờ biên dịch quá 35 giây; cần kiểm tra hạ tầng")
+    if not out.strip():
+        raise RuntimeError("Sandbox biên dịch không trả kết quả")
     result = json.loads(out.decode("utf-8", "replace").splitlines()[-1])
     if not result.get("ok"):
         s.status = "failed"; s.compile_error = result.get("error", "Biên dịch thất bại")[:6000]
@@ -87,6 +93,10 @@ def compile_submission(db: Session, s: Submission):
         data = base64.b64decode(result["artifact"], validate=True)
         target = ARTIFACTS / f"submission-{s.id}.bin"; target.write_bytes(data)
         s.artifact = target.name; s.status = "ready"; s.compile_error = None
+        if validate:
+            error = validate_protocol(s)
+            if error:
+                s.status, s.compile_error = "failed", error
 
 def ensure_local_artifact(db: Session, s: Submission):
     # Artifacts live in each computer's Docker volume. A match assigned to a
@@ -94,7 +104,12 @@ def ensure_local_artifact(db: Session, s: Submission):
     if s.status != "ready":
         return False
     if not s.artifact or not (ARTIFACTS / s.artifact).is_file():
+        original = s.status, s.artifact, s.compile_error
         compile_submission(db, s)
+        if s.status != "ready":
+            error = s.compile_error
+            s.status, s.artifact, s.compile_error = original
+            raise RuntimeError("Không dựng lại được artifact bot đã khóa: " + str(error))
     return s.status == "ready"
 
 def start_bot(s):
@@ -109,8 +124,7 @@ def start_bot(s):
         proc.stdin.flush()
         return proc, None
     except Exception:
-        proc.kill()
-        proc.wait(timeout=2)
+        stop_bot(proc)
         raise
 
 def read_line_timeout(stream, timeout, pending):
@@ -135,44 +149,131 @@ def read_line_timeout(stream, timeout, pending):
                 return None
             pending.extend(chunk)
 
+
+def unsolicited(proc, pending):
+    if pending:
+        return True
+    with selectors.DefaultSelector() as sel:
+        sel.register(proc.stdout, selectors.EVENT_READ)
+        if sel.select(0):
+            chunk = os.read(proc.stdout.fileno(), 256)
+            if chunk:
+                pending.extend(chunk)
+                return True
+    return False
+
+
+def parse_reply(raw, choices):
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("Duplicate JSON key")
+            result[key] = value
+        return result
+    try:
+        reply = json.loads(raw.decode("utf-8"), object_pairs_hook=unique) if raw and len(raw) <= 256 and raw.endswith(b"\n") else None
+        if not isinstance(reply, dict) or set(reply) != {"piece_id", "to"} or not all(isinstance(v, str) for v in reply.values()):
+            return None
+        return next((mv for mv in choices if mv["piece_id"] == reply["piece_id"] and mv["to"] == reply["to"]), None)
+    except (UnicodeDecodeError, ValueError):
+        return None
+
+
+def stop_bot(proc):
+    try:
+        proc.kill()
+        proc.wait(timeout=2)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    for pipe in (proc.stdin, proc.stdout):
+        if pipe:
+            pipe.close()
+    if getattr(proc, "sandbox_name", None):
+        subprocess.run(["docker", "rm", "-f", proc.sandbox_name], stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=10)
+
+
+def validate_protocol(s):
+    """Fresh sandbox per side; three consecutive turns in legal game states."""
+    env = JUDGE_ENV.get() or {}
+    for side in ("south", "north"):
+        started = time.monotonic()
+        proc, _ = start_bot(s)
+        pending = bytearray()
+        game, count = new_game(), 0
+        try:
+            while count < 3:
+                choices = legal_moves(game, game["turn"])
+                if not choices or game["winner"]:
+                    return "Protocol validation ended before three responses"
+                if game["turn"] != side:
+                    game = apply_move(game, choices[0])
+                    continue
+                if unsolicited(proc, pending):
+                    return f"{side}: unsolicited output"
+                payload = {"protocol_version": 2, "move_number": game["move_number"], "side": side,
+                           "board_size": 9, "pieces": game["pieces"], "legal_moves": choices}
+                try:
+                    proc.stdin.write((json.dumps(payload) + "\n").encode())
+                    proc.stdin.flush()
+                    timeout = max(0, env.get("first_timeout", 15) - (time.monotonic()-started)) if count == 0 else env.get("move_timeout", 1.5)
+                    raw = read_line_timeout(proc.stdout, timeout, pending)
+                except (BrokenPipeError, OSError):
+                    raw = None
+                selected = parse_reply(raw, choices)
+                if selected is None:
+                    if proc.poll() in (64, 70, 71):
+                        raise RuntimeError("Sandbox validation failed to start; infrastructure review required")
+                    return f"{side}: invalid protocol, illegal move, exit or timeout"
+                if unsolicited(proc, pending) or proc.poll() is not None:
+                    return f"{side}: extra response or early exit"
+                game = apply_move(game, selected)
+                count += 1
+        finally:
+            stop_bot(proc)
+    return None
+
 def play_match(db: Session, m: Match):
     a, b = db.get(Submission, m.submission_a), db.get(Submission, m.submission_b)
     if not a or not b or not ensure_local_artifact(db, a) or not ensure_local_artifact(db, b):
         m.status = "failed"; m.detail = json.dumps({"error": "Bot chưa sẵn sàng"}); return
-    pa, ca = start_bot(a)
-    try:
-        pb, cb = start_bot(b)
-    except Exception:
-        pa.kill(); pa.wait(timeout=2)
-        raise
     game = new_game(); turns = []; side_a, side_b = "south", "north"
-    output_buffers = {pa.stdout: bytearray(), pb.stdout: bytearray()}
+    processes, output_buffers, started = {}, {}, {}
     try:
-        max_moves = int(os.getenv("MATCH_MAX_MOVES", "200"))
-        timeout = float(os.getenv("MATCH_MOVE_TIMEOUT_SECONDS", "1.5"))
-        first_move_timeout = float(os.getenv("MATCH_FIRST_MOVE_TIMEOUT_SECONDS", "15"))
+        env = JUDGE_ENV.get()
+        max_moves = env["max_moves"] if env else int(os.getenv("MATCH_MAX_MOVES", "200"))
+        timeout = env["move_timeout"] if env else float(os.getenv("MATCH_MOVE_TIMEOUT_SECONDS", "1.5"))
+        first_move_timeout = env["first_timeout"] if env else float(os.getenv("MATCH_FIRST_MOVE_TIMEOUT_SECONDS", "15"))
+        first = {"south": True, "north": True}
         repetitions = {position_key(game): 1}
         while not game["winner"] and game["move_number"] <= max_moves:
             side = game["turn"]
-            player_proc = pa if side == side_a else pb
             choices = legal_moves(game, side)
             if not choices:
                 game["win_reason"] = "no_legal_moves_draw"
                 break
+            if side not in processes:
+                started[side] = time.monotonic()
+                processes[side], _ = start_bot(a if side == side_a else b)
+                output_buffers[processes[side].stdout] = bytearray()
+            player_proc = processes[side]
             payload = {"protocol_version": 2, "move_number": game["move_number"], "side": side,
                        "board_size": 9, "pieces": game["pieces"], "legal_moves": choices}
             try:
+                if unsolicited(player_proc, output_buffers[player_proc.stdout]):
+                    raise BrokenPipeError("Unsolicited response")
                 player_proc.stdin.write((json.dumps(payload, separators=(",", ":")) + "\n").encode())
                 player_proc.stdin.flush()
+                allowance = max(0, first_move_timeout - (time.monotonic() - started[side])) if first[side] else timeout
                 # Each bot's first turn also includes Docker/Python startup time.
-                raw = read_line_timeout(player_proc.stdout, first_move_timeout if game["move_number"] <= 2 else timeout,
+                raw = read_line_timeout(player_proc.stdout, allowance,
                                         output_buffers[player_proc.stdout])
             except (BrokenPipeError, OSError):
                 raw = None
-            try:
-                reply = json.loads(raw.decode("utf-8")) if raw else None
-                selected = next((mv for mv in choices if mv["piece_id"] == reply.get("piece_id") and mv["to"] == reply.get("to")), None) if isinstance(reply, dict) else None
-            except (UnicodeDecodeError, json.JSONDecodeError):
+            first[side] = False
+            selected = parse_reply(raw, choices)
+            if selected and unsolicited(player_proc, output_buffers[player_proc.stdout]):
                 selected = None
             if selected is None:
                 # Entry-point failures are infrastructure errors, not a bot
@@ -189,6 +290,9 @@ def play_match(db: Session, m: Match):
             turns.append({"move_number": game["move_number"], "side": side, **selected})
             game = apply_move(game, selected)
             if not game["winner"]:
+                if not legal_moves(game, game["turn"]):
+                    game["win_reason"] = "no_legal_moves_draw"
+                    break
                 key = position_key(game)
                 repetitions[key] = repetitions.get(key, 0) + 1
                 if repetitions[key] >= 3:
@@ -204,14 +308,8 @@ def play_match(db: Session, m: Match):
                                "turns": turns, "final_pieces": game["pieces"]})
         m.status = "done"
     finally:
-        for p, cid in ((pa, ca), (pb, cb)):
-            try: p.kill(); p.wait(timeout=2)
-            except Exception: pass
-            for pipe in (p.stdin, p.stdout):
-                if pipe:
-                    pipe.close()
-            if cid:
-                subprocess.run(["docker", "rm", "-f", cid], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        for p in processes.values():
+            stop_bot(p)
 
 def recover_abandoned_jobs(db):
     """Return work from a dead or replaced worker to the shared queue."""
@@ -224,14 +322,35 @@ def recover_abandoned_jobs(db):
         replaced = bool(node and job.claim_token and node.instance_token != job.claim_token)
         expired = bool(job.claimed_at and job.claimed_at < now - timedelta(hours=1))
         if stale_node or replaced or expired:
+            if job.kind == "match":
+                mid = json.loads(job.payload).get("match_id")
+                attempt = db.scalar(select(GameAttempt).where(GameAttempt.match_id == mid, GameAttempt.attempt == job.attempts))
+                if attempt and attempt.status == "running":
+                    attempt.status, attempt.finished_at = "abandoned", now
+                    attempt.detail = "Worker heartbeat lost or replaced; original locked configuration retained"
             job.status = "queued"
             job.worker_id = None
             job.claim_token = None
             job.claimed_at = None
 
 def claim(db, instance_token):
-    job = db.scalar(select(Job).where(Job.status == "queued")
-                    .order_by(Job.id).with_for_update(skip_locked=True).limit(1))
+    # Serialize with organizer reports so a held game cannot start from the queue.
+    tournament.serialize(db)
+    held_jobs = []
+    while True:
+        job = db.scalar(select(Job).where(Job.status == "queued", Job.id.not_in(held_jobs))
+                        .order_by(Job.priority, Job.id).with_for_update(skip_locked=True).limit(1))
+        if not job or job.kind != "match":
+            break
+        match = db.get(Match, json.loads(job.payload)["match_id"])
+        encounter = db.get(tournament.Encounter, match.encounter_id) if match and match.encounter_id else None
+        if not encounter:
+            break
+        r = db.get(TournamentRound, encounter.round_id)
+        t = db.get(tournament.Tournament, r.tournament_id)
+        if not tournament.held(db, t, r, encounter):
+            break
+        held_jobs.append(job.id)
     if job:
         job.status = "running"
         job.worker_id = WORKER_ID
@@ -242,12 +361,26 @@ def claim(db, instance_token):
             match = db.get(Match, json.loads(job.payload)["match_id"])
             if match:
                 match.worker_id = WORKER_ID
+                if match.status in ("queued", "scheduled"):
+                    match.status = "running"
+                if match.encounter_id:
+                    # An organizer retry creates a new job for the same game;
+                    # attempt numbers belong to the game across all jobs.
+                    previous = db.scalar(select(func.max(GameAttempt.attempt)).where(GameAttempt.match_id == match.id)) or 0
+                    job.attempts = max(job.attempts, previous + 1)
+                    db.add(GameAttempt(match_id=match.id, attempt=job.attempts, worker_id=WORKER_ID))
         db.flush()
         return job
 
 def release_claim(db, job_id, instance_token):
     job = db.scalar(select(Job).where(Job.id == job_id).with_for_update())
     if job and job.status == "running" and job.claim_token == instance_token:
+        if job.kind == "match":
+            attempt = db.scalar(select(GameAttempt).where(GameAttempt.match_id == json.loads(job.payload)["match_id"],
+                                                          GameAttempt.attempt == job.attempts))
+            if attempt and attempt.status == "running":
+                attempt.status, attempt.finished_at = "abandoned", datetime.now(timezone.utc)
+                attempt.detail = "Claim released after database connection failure"
         job.status = "queued"
         job.worker_id = None
         job.claim_token = None
@@ -257,6 +390,7 @@ class LostClaim(Exception):
     pass
 
 def process(job_id, instance_token):
+    environment_token = None
     try:
         with SessionLocal.begin() as db:
             job = db.get(Job, job_id)
@@ -264,8 +398,17 @@ def process(job_id, instance_token):
                 return
             try:
                 payload = json.loads(job.payload)
+                round_id = payload.get("round_id")
+                if job.kind == "match":
+                    game = db.get(Match, payload["match_id"])
+                    if game and game.encounter_id:
+                        round_id = db.get(tournament.Encounter, game.encounter_id).round_id
+                if round_id:
+                    environment_token = JUDGE_ENV.set(json.loads(db.get(TournamentRound, round_id).environment))
                 if job.kind == "compile":
-                    s = db.get(Submission, payload["submission_id"]); compile_submission(db, s)
+                    s = db.get(Submission, payload["submission_id"])
+                    if s.status not in ("ready", "failed"):
+                        compile_submission(db, s, validate=bool(round_id))
                 elif job.kind == "match":
                     m = db.get(Match, payload["match_id"])
                     if m.status == "done" or m.status == "void":
@@ -280,7 +423,9 @@ def process(job_id, instance_token):
                     if m: m.status = "failed"; m.detail = json.dumps({"error": str(exc)[:1000]})
                 elif job.kind == "compile":
                     s = db.get(Submission, json.loads(job.payload).get("submission_id"));
-                    if s: s.status = "failed"; s.compile_error = str(exc)[:6000]
+                    if s: s.status = "infrastructure_error"; s.compile_error = str(exc)[:6000]
+            if job.kind == "match":
+                tournament.serialize(db)
             # A recovered job may already belong to another machine. Lock and
             # re-read its ownership before committing any result or score.
             current = db.scalar(select(Job).where(Job.id == job_id)
@@ -289,8 +434,18 @@ def process(job_id, instance_token):
                 raise LostClaim()
             current.claim_token = None
             current.claimed_at = None
+            if job.kind == "match":
+                m = db.get(Match, json.loads(job.payload)["match_id"])
+                if m and m.encounter_id:
+                    attempt = db.scalar(select(GameAttempt).where(GameAttempt.match_id == m.id, GameAttempt.attempt == job.attempts))
+                    if attempt:
+                        attempt.status, attempt.detail, attempt.finished_at = m.status, m.detail, datetime.now(timezone.utc)
+                    tournament.after_game(db, m)
     except LostClaim:
         return
+    finally:
+        if environment_token is not None:
+            JUDGE_ENV.reset(environment_token)
 
 def register_worker(instance_token):
     now = datetime.now(timezone.utc)
@@ -315,6 +470,23 @@ def heartbeat_loop(instance_token, stop_event):
         except OperationalError:
             engine.dispose()
 
+def automation_loop(instance_token,stop_event):
+    # Separate from judging and heartbeat so a long game cannot delay deadlines.
+    while not stop_event.is_set():
+        try:
+            with SessionLocal.begin() as db:
+                node=db.get(WorkerNode,WORKER_ID)
+                if not node or node.instance_token!=instance_token:
+                    stop_event.set()
+                    return
+                tournament.auto_tick(db)
+        except OperationalError:
+            engine.dispose()
+        except Exception:
+            logging.getLogger(__name__).exception("Automatic tournament progression failed")
+        stop_event.wait(5)
+
+
 def main():
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", WORKER_ID):
         raise ValueError("WORKER_ID must contain only lowercase letters, digits, '-' or '_'")
@@ -333,9 +505,7 @@ def main():
             time.sleep(5)
     stop_event = threading.Event()
     threading.Thread(target=heartbeat_loop, args=(instance_token, stop_event), daemon=True).start()
-    tz = ZoneInfo(os.getenv("EVENT_TIMEZONE", "Asia/Ho_Chi_Minh"))
-    next_pair_check = 0.0
-    completed_final_deadline = None
+    threading.Thread(target=automation_loop,args=(instance_token,stop_event),daemon=True).start()
     last_recovery = 0.0
     pending_release = None
     while not stop_event.is_set():
@@ -345,33 +515,12 @@ def main():
                 with SessionLocal.begin() as db:
                     release_claim(db, pending_release, instance_token)
                 pending_release = None
-            now = datetime.now(tz)
-            with SessionLocal() as db:
-                state = get_event_state(db, os.getenv("MATCHES_ENABLED", "false").lower() == "true", now)
-            start_time = datetime.fromisoformat(state["start_at"]).time().replace(tzinfo=None) if state["start_at"] else None
-            end_at = datetime.fromisoformat(state["end_at"]) if state["end_at"] else None
-            normal_pairing = bool(state["matches_enabled"] and start_time and now.time() >= start_time)
-            # On the final day the window can close at exactly the pairing time.
-            # Finish pairing submissions made before the deadline even if the
-            # worker polls (or reconnects) after that instant.
-            final_pairing = bool(state["enabled"] and state["worker_enabled"] and end_at
-                                 and start_time and end_at.time().replace(tzinfo=None) >= start_time
-                                 and now >= end_at and end_at != completed_final_deadline)
-            if (os.getenv("AUTO_PAIR_ENABLED", "true").lower() == "true"
-                    and (normal_pairing or final_pairing) and time.monotonic() >= next_pair_check):
-                next_pair_check = time.monotonic() + 3
-                try:
-                    pair_day = end_at.date().isoformat() if final_pairing else now.date().isoformat()
-                    cutoff = end_at.astimezone(timezone.utc) if final_pairing else None
-                    finished = create_daily_pairings(pair_day, cutoff=cutoff)
-                    if final_pairing and finished:
-                        completed_final_deadline = end_at
-                except Exception:
-                    # Retry later; the database lock keeps concurrent workers idempotent.
-                    time.sleep(2)
             if time.monotonic() - last_recovery >= 10:
                 with SessionLocal.begin() as db:
                     recover_abandoned_jobs(db)
+                with SessionLocal.begin() as db:
+                    tournament.serialize(db)
+                    tournament.pump(db)
                 last_recovery = time.monotonic()
             with SessionLocal.begin() as db:
                 job = claim(db, instance_token); job_id = job.id if job else None
@@ -386,40 +535,7 @@ def main():
             time.sleep(3)
 
 def create_daily_pairings(day, cutoff=None):
-    import random
-    day_start, day_end = submission_day_bounds(date.fromisoformat(day))
-    if cutoff is not None:
-        day_end = min(day_end, cutoff)
-    with SessionLocal.begin() as db:
-        db.execute(text("SELECT pg_advisory_xact_lock(74620146)"))
-        # Let every source submitted before pairing finish compilation first.
-        if db.scalar(select(Submission.id).where(
-            Submission.created_at >= day_start,
-            Submission.created_at < day_end,
-            Submission.status == "queued",
-        )):
-            return False
-        players = db.execute(select(Submission.player_id, Submission.id).where(
-            Submission.status == "ready",
-            Submission.created_at >= day_start,
-            Submission.created_at < day_end,
-        ).order_by(Submission.id.desc())).all()
-        newest = {}
-        for pid, sid in players:
-            newest.setdefault(pid, sid)
-        already_matched = set()
-        for player_a, player_b in db.execute(select(Match.player_a, Match.player_b).where(
-            Match.event_day == day, Match.status != "void",
-        )):
-            already_matched.update((player_a, player_b))
-        # Existing pairs are excluded, but unmatched teams can join later today.
-        eligible = [(pid, sid) for pid, sid in newest.items() if pid not in already_matched]
-        random.SystemRandom().shuffle(eligible)
-        if len(eligible) < 2:
-            return True
-        for (pa, sa), (pb, sb) in zip(eligible[::2], eligible[1::2]):
-            m = Match(player_a=pa, player_b=pb, submission_a=sa, submission_b=sb, event_day=day, kind="daily")
-            db.add(m); db.flush(); db.add(Job(kind="match", payload=json.dumps({"match_id": m.id})))
-        return True
+    # Tournament-only release. Kept callable for old operations scripts.
+    return True
 
 if __name__ == "__main__": main()

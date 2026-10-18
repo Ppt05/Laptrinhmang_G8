@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Sandbox image entry point. Compilation and bots run without network access."""
 import base64
+import ast
 import json
 import os
 import pathlib
 import subprocess
 import sys
 import time
+
+SUPPORT_DIR = pathlib.Path(__file__).resolve().parent
 
 
 def emit(payload):
@@ -23,22 +26,33 @@ def compile_bot(language):
     work.mkdir(parents=True, exist_ok=True)
     if language == "python":
         try:
-            compile(source.decode("utf-8"), "main.py", "exec")
+            text = source.decode("utf-8")
+            tree = ast.parse(text, "submission.py")
+            if not any(isinstance(node, ast.FunctionDef) and node.name == "choose_move" for node in tree.body):
+                raise ValueError("Submit def choose_move(state); the judge handles input and output.")
+            wrapped = text + "\n\n" + (SUPPORT_DIR / "python_main.py").read_text()
+            compile(wrapped, "main.py", "exec")
         except Exception as exc:
             emit({"ok": False, "error": f"Python syntax error: {exc}"})
             return 2
-        artifact = source
+        artifact = wrapped.encode("utf-8")
     elif language == "cpp":
         src = work / "main.cpp"
         target = work / "program"
-        src.write_bytes(source)
-        result = subprocess.run(
-            ["g++", "-std=c++17", "-O2", "-pipe", "-static", "-s", str(src), "-o", str(target)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=25,
-            check=False,
-        )
+        prefix = f'#include "{SUPPORT_DIR / "cpp_bot.hpp"}"\n#line 1 "submission.cpp"\n'
+        suffix = f'\n#include "{SUPPORT_DIR / "cpp_main.hpp"}"\n'
+        src.write_bytes(prefix.encode() + source + suffix.encode())
+        try:
+            result = subprocess.run(
+                ["g++", "-std=c++17", "-O2", "-pipe", "-static", "-s", str(src), "-o", str(target)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=25,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            emit({"ok": False, "error": "C++ compilation exceeded 25 seconds."})
+            return 2
         if result.returncode != 0:
             emit({"ok": False, "error": result.stderr.decode("utf-8", "replace")[-6000:]})
             return 2

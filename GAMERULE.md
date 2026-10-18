@@ -2,9 +2,19 @@
 
 ## 1. Hiệu lực và phạm vi áp dụng
 
+Phiên bản 2026-10-18.4: điều hành loại trực tiếp liên tục, chốt encounter ngay khi đủ ván và không có hold/khiếu nại đang xử lý. Chỉ mở cửa sổ nộp vòng kế tiếp sau khi đủ các suất đi tiếp. Chính sách điều hành này áp dụng cho knockout đang và sắp diễn ra; không sửa kết quả, replay, bản chụp hoặc luật bàn cờ đã lưu. Vòng bảng vẫn giữ hạn khiếu nại 30 phút.
+
+Thay đổi 2026-10-18.3: BTC có thể ủy quyền worker tự điều hành theo các mốc thời gian tại mục 11.1. Giữ nguyên luật bàn cờ, thể thức, thời hạn khiếu nại và bản chụp đã lưu của giải cũ.
+
+Thay đổi 2026-10-18.2: các trường văn bản trong phần điều hành là tùy chọn, gồm tên giải, kênh liên hệ, chính sách sự cố, lý do và bằng chứng. Để trống không chặn thao tác; hệ thống vẫn lưu loại thao tác, đối tượng, người thực hiện và thời điểm, không tự điền nội dung. Thông báo để trống không tạo bản tin.
+
+Thay đổi 2026-10-18.1: bổ sung API nộp hàm và mã mẫu cho C++17/Python 3 tại mục 9. Áp dụng cho giải mới dùng môi trường `bot_entrypoint=functions-v1`; giữ nguyên bản chụp luật, image, submission và replay của giải cũ.
+
+Thay đổi 2026-10-17.1: cho phép giải hai đội theo ngoại lệ tại mục 4.1 và làm rõ quyền khóa đăng ký chủ động của BTC.
+
 Tài liệu này quy định luật chơi, thể thức giải đấu, điều kiện nộp bot, cách tính điểm và Elo, cùng quy trình xử lý sự cố và khiếu nại của OTTv2. Ban tổ chức (BTC), đội thi và hệ thống thi đấu áp dụng thống nhất các quy định trong tài liệu.
 
-Phiên bản này có hiệu lực từ ngày ban hành đối với các giải mở đăng ký từ ngày đó. Với giải đã bắt đầu, việc áp dụng thay đổi tuân theo mục 11.4. Khi có khác biệt với tài liệu hướng dẫn hoặc bản luật cũ, tài liệu này là căn cứ áp dụng trong phạm vi hiệu lực của phiên bản.
+Phiên bản này có hiệu lực theo mốc công bố và phạm vi áp dụng nêu trên. Với giải đã khóa danh sách, việc áp dụng thay đổi tuân theo mục 11.4. Khi có khác biệt với tài liệu hướng dẫn hoặc bản luật cũ, tài liệu này là căn cứ áp dụng trong phạm vi hiệu lực của phiên bản.
 
 ## 2. Thuật ngữ, chế độ và thời gian
 
@@ -71,26 +81,34 @@ Luồng chính: đăng ký, khóa đăng ký, chụp Elo, chia và xác nhận b
 
 ### 4.1. Cấu hình bảng
 
-N là số đội đăng ký hợp lệ tại lúc khóa, M là số đội tối đa/bảng, Q là số suất đi tiếp/bảng. M và Q phải là số nguyên dương. Số bảng G = ceil(N/M). Phân phối cân bằng, kích thước các bảng chênh nhau tối đa một đội. Mỗi bảng phải có hơn Q đội và G×Q ≥ 2. Nếu không thỏa thì không được xác nhận cấu hình.
+Ban tổ chức cấu hình số đội tối đa trong mỗi bảng và số đội được đi tiếp từ mỗi bảng. Hai giá trị này phải là số nguyên dương.
 
-Giải hiện tại áp dụng N=14, M=4, Q=2: 4 bảng gồm 4, 4, 3 và 3 đội; mỗi bảng chọn 2 đội, tổng 8 suất đi tiếp vào tứ kết. Nếu đủ 8 đội đi tiếp hợp lệ thì nhánh knockout không có BYE.
+Số bảng được tính bằng tổng số đội đăng ký hợp lệ tại lúc khóa, chia cho số đội tối đa mỗi bảng, rồi làm tròn lên. Các đội được chia đều để số đội giữa các bảng chênh nhau tối đa một đội. Với giải có từ ba đội, số đội trong mỗi bảng phải lớn hơn số suất đi tiếp của bảng đó, và tổng số suất đi tiếp của toàn giải phải có ít nhất hai. Nếu không đáp ứng các điều kiện này thì không được xác nhận cấu hình.
 
-Ví dụ cấu hình không hợp lệ: N=5, M=4, Q=2 tạo bảng chỉ có 2 đội; có thể đổi thành M=5 trước khi xác nhận. Không mở thể thức này với dưới 3 đội.
+Giải có đúng hai đội: xếp cả hai đội vào một bảng. Số đội tối đa mỗi bảng phải từ hai trở lên và số suất đi tiếp của bảng phải là hai. Hai đội chơi một encounter vòng bảng hai ván đổi phe, rồi cả hai đội còn đủ điều kiện đi tiếp vào chung kết theo cùng luồng chốt bảng và xác nhận nhánh. Chung kết dùng sáu ván chính và các cặp phụ tại mục 6.2. Các quy định về bot, phân hạng, hành chính, Elo và khiếu nại vẫn áp dụng. Với trường hợp này, cho phép đặt cả số đội tối đa và số suất đi tiếp của bảng là hai.
+
+BTC được khóa đăng ký chủ động khi còn ở giai đoạn đăng ký, không phải đợi hạn đóng đã công bố. Khóa lập tức dừng nhận đội mới và chụp danh sách hiện có; chỉ khóa khi danh sách và cấu hình tạo được giải hợp lệ với ít nhất hai đội. Không mở lại hoặc thay đổi danh sách đã khóa bằng thao tác khóa lặp lại.
+
+Giải hiện tại có 14 đội, tối đa 4 đội mỗi bảng và 2 suất đi tiếp mỗi bảng: chia thành 4 bảng gồm 4, 4, 3 và 3 đội. Mỗi bảng chọn 2 đội, tổng cộng 8 suất vào tứ kết. Nếu đủ 8 đội đi tiếp hợp lệ thì nhánh knockout không có BYE.
+
+Ví dụ cấu hình không hợp lệ: giải có 5 đội, tối đa 4 đội mỗi bảng và 2 suất đi tiếp mỗi bảng sẽ tạo hai bảng có 3 và 2 đội. Bảng hai đội không đáp ứng điều kiện phải có nhiều đội hơn số suất đi tiếp. Có thể sửa cấu hình thành tối đa 5 đội mỗi bảng để cả 5 đội thi chung một bảng, rồi chọn 2 đội đi tiếp. Ví dụ này minh họa lỗi cấu hình chia bảng, không quy định số đội tối thiểu của toàn giải.
+
+Số đội tối thiểu để mở giải là 2. Giải có đúng hai đội áp dụng ngoại lệ nêu trên; giải có từ ba đội áp dụng các điều kiện chia bảng thông thường. Không mở giải với dưới hai đội.
 
 ### 4.2. Chia hạt giống có thể tái lập
 
 1. Chụp Elo khi khóa đăng ký; đội chưa có Elo dùng 1 000. Thay đổi Elo sau đó không làm đổi bảng.
 2. Xếp Elo giảm dần; bằng Elo thì dùng bốc thăm có lưu.
 3. Tính trước dung lượng từng bảng; các bảng lớn được gán ID trước các bảng nhỏ.
-4. Chia danh sách đội thành các nhóm hạt giống liên tiếp, mỗi nhóm tối đa G đội.
-5. Với từng nhóm hạt giống, bốc thăm thứ tự các bảng còn chỗ và phân lần lượt, mỗi bảng nhận tối đa một đội từ nhóm đó. Khi chỉ còn nhóm cuối chưa đủ G đội, chỉ dùng các bảng còn chỗ.
+4. Chia danh sách đội thành các nhóm hạt giống liên tiếp. Số đội tối đa trong mỗi nhóm bằng số bảng.
+5. Với từng nhóm hạt giống, bốc thăm thứ tự các bảng còn chỗ và phân lần lượt, mỗi bảng nhận tối đa một đội từ nhóm đó. Khi nhóm hạt giống cuối cùng có ít đội hơn số bảng, chỉ dùng các bảng còn chỗ.
 6. Lưu danh sách đầu vào, dung lượng bảng, phiên bản thuật toán, nguồn/seed ngẫu nhiên và kết quả. BTC xác nhận trước khi mở nộp.
 
 Mọi lần bốc thăm trong tài liệu phải có bản ghi gồm lý do, tập lựa chọn hợp lệ, phương pháp ngẫu nhiên, kết quả, thời điểm và người thực hiện. Không bốc lại để chọn kết quả thuận lợi.
 
 ### 4.3. Lịch vòng bảng
 
-Mỗi cặp trong cùng bảng gặp nhau đúng một trận hai ván đổi phe. Bảng n đội có n(n−1)/2 trận; mỗi đội có n−1 trận. Bảng lẻ có lượt nghỉ, không được cộng điểm. Lịch và phe từng ván được lưu trước khi chạy. Một đội không được chơi hai trận Tournament đồng thời.
+Mỗi cặp trong cùng bảng gặp nhau đúng một trận hai ván đổi phe. Mỗi đội gặp tất cả các đội còn lại trong bảng. Tổng số trận bằng số đội trong bảng nhân với số đội còn lại, rồi chia đôi. Bảng lẻ có lượt nghỉ, không được cộng điểm. Lịch và phe từng ván được lưu trước khi chạy. Một đội không được chơi hai trận Tournament đồng thời.
 
 ## 5. Điểm và xếp hạng vòng bảng
 
@@ -112,7 +130,7 @@ Xếp các đội còn đủ điều kiện đi tiếp trước các đội thi�
 
 So sánh lần lượt các tiêu chí; không tạo lại nhóm đối đầu nhỏ hơn sau từng bước. Trận bị loại khỏi bảng theo mục 8 không tham gia bất kỳ tiêu chí nào.
 
-Nếu sau bước 5 còn một khối đội bằng nhau và khối đó chiếm ít nhất một vị trí từ 1 đến Q, toàn bộ đội trong khối chơi phân hạng. Khối bằng nhau nằm hoàn toàn dưới Q không chơi phân hạng; bốc thăm có lưu để hoàn thiện thứ tự.
+Nếu sau bước 5 còn một khối đội bằng nhau và khối đó chiếm ít nhất một vị trí được đi tiếp, toàn bộ đội trong khối chơi phân hạng. Khối bằng nhau nằm hoàn toàn ngoài các vị trí được đi tiếp không chơi phân hạng; bốc thăm có lưu để hoàn thiện thứ tự.
 
 ### 5.3. Phân hạng và suất đi tiếp
 
@@ -120,15 +138,15 @@ Mỗi khối cần phân hạng chơi đúng một vòng tròn phụ, mỗi cặ
 
 Thứ tự phụ chỉ phân bổ lại các vị trí vốn thuộc khối đó. Điểm phụ không cộng vào bảng chính hoặc các tỷ lệ bảng chính dùng để xếp hạt giống knockout. Trận phụ thực đấu hợp lệ được tính Elo.
 
-Chọn tối đa Q đội đủ điều kiện cao nhất mỗi bảng. Đội rút giải, bị loại hoặc không có bot hợp lệ cho vòng bảng không được đi tiếp. Không lấy đội ở bảng khác để bù suất thiếu. Nếu tổng số đội đi tiếp còn một, đội đó là vô địch không qua trận chung kết; nếu không còn đội nào thì kết thúc giải không có vô địch. Các quyết định này không tạo trận hoặc Elo.
+Chọn các đội đủ điều kiện có thứ hạng cao nhất trong mỗi bảng, tối đa bằng số suất đi tiếp đã cấu hình cho bảng đó. Đội rút giải, bị loại hoặc không có bot hợp lệ cho vòng bảng không được đi tiếp. Không lấy đội ở bảng khác để bù suất thiếu. Nếu tổng số đội đi tiếp còn một, đội đó là vô địch không qua trận chung kết; nếu không còn đội nào thì kết thúc giải không có vô địch. Các quyết định này không tạo trận hoặc Elo.
 
 ## 6. Nhánh và trận knockout
 
 ### 6.1. Hạt giống và BYE
 
-Với K đội đi tiếp và K ≥ 2, số vị trí B là lũy thừa 2 nhỏ nhất không nhỏ hơn K. Xếp hạt giống lần lượt theo:
+Khi có ít nhất hai đội đi tiếp, số vị trí trong nhánh là lũy thừa của hai nhỏ nhất đủ chỗ cho tất cả các đội đó. Xếp hạt giống lần lượt theo:
 
-1. Vị trí trong bảng đã chốt: tất cả đội nhất trước đội nhì, đội nhì trước đội ba, và tương tự với mọi Q.
+1. Vị trí trong bảng đã chốt: tất cả đội nhất trước đội nhì, đội nhì trước đội ba, tiếp tục như vậy cho đến khi hết các đội đi tiếp.
 2. Điểm trận bảng chính/số trận tính vào bảng chính.
 3. Điểm ván bảng chính/số ván quy ước tính vào bảng chính.
 4. Số trận thắng bảng chính/số trận tính vào bảng chính.
@@ -136,7 +154,7 @@ Với K đội đi tiếp và K ≥ 2, số vị trí B là lũy thừa 2 nhỏ 
 
 Mỗi trận bảng không bị loại có hai ván quy ước cho mẫu số, kể cả trận hành chính; các ván quy ước không tạo bản ghi ván thực đấu. Không dùng điểm đấu phân hạng để tính các tỷ lệ. Các tỷ lệ được so sánh chính xác, không dùng số đã làm tròn trên giao diện. Khi mẫu số bằng 0, dùng tỷ lệ 0.
 
-Để đặt hạt giống vào nhánh, bắt đầu danh sách vị trí `[1, 2]`. Khi nhân đôi kích thước từ b lên 2b, thay từng số s bằng cặp `[s, 2b + 1 − s]`, đến khi đủ B vị trí. Ví dụ B=8: `[1, 8, 4, 5, 2, 7, 3, 6]`; mỗi hai vị trí liên tiếp tạo một cặp vòng đầu. Hạt giống lớn hơn K là ô trống. Cách này cấp B−K BYE cho các hạt giống cao nhất.
+Để đặt hạt giống vào nhánh, bắt đầu danh sách vị trí `[1, 2]`. Mỗi lần tăng gấp đôi số vị trí, thay từng hạt giống bằng một cặp: giữ nguyên hạt giống đó ở trước; hạt giống ở sau bằng tổng số vị trí mới cộng một rồi trừ hạt giống ở trước. Lặp lại đến khi đủ số vị trí cần cho nhánh. Ví dụ, nhánh tám vị trí có thứ tự `[1, 8, 4, 5, 2, 7, 3, 6]`; mỗi hai vị trí liên tiếp tạo một cặp vòng đầu. Hạt giống vượt quá tổng số đội đi tiếp tương ứng với ô trống. Số BYE bằng số vị trí trong nhánh trừ số đội đi tiếp và được cấp cho các hạt giống cao nhất.
 
 Cho phép tái đấu cùng bảng; không đổi vị trí để né đối thủ. Nhánh cố định sau xác nhận. Đội rút hoặc bị loại sau xác nhận tạo ô trống; không xếp hạt giống lại hoặc bổ sung đội đã bị loại.
 
@@ -197,13 +215,13 @@ Nếu đội rút toàn bộ giải hoặc bị truất quyền trước khi b�
 
 Sau khi bảng đã chốt nhưng trước khi nhánh được xác nhận, bỏ đội không còn đủ điều kiện và chọn đội đủ điều kiện tiếp theo trong bảng theo thứ tự đã chốt; không tính lại các trận của bảng. Sau khi nhánh được xác nhận, áp dụng ô trống ở mục 6.1, không thay đội hoặc sửa lại bảng đã chốt.
 
-BTC có thể truất quyền khi xác minh có gian lận danh tính, can thiệp kết quả, cố ý phá sandbox hoặc vi phạm điều kiện tham dự đã công bố. Quyết định phải ghi căn cứ, bằng chứng, người quyết định và cho phép khiếu nại theo mục 11. Lỗi bot thông thường không phải căn cứ tự động truất quyền.
+BTC có thể truất quyền khi xác minh có gian lận danh tính, can thiệp kết quả, cố ý phá sandbox hoặc vi phạm điều kiện tham dự đã công bố. Quyết định lưu người thực hiện và cho phép khiếu nại theo mục 11; căn cứ và bằng chứng dạng văn bản là tùy chọn. Lỗi bot thông thường không phải căn cứ tự động truất quyền.
 
 ## 9. Giao thức bot và sandbox
 
 ### 9.1. Mã nguồn và biên dịch
 
-Chấp nhận Python 3 (`python`) hoặc C++17 (`cpp`), một tệp UTF-8 tối đa **100 000 byte**. Không nhận ZIP, project nhiều tệp hoặc file thực thi. Không cài thêm thư viện lúc chạy. C++ dùng thư viện chuẩn và mã phụ trợ tự chứa; không giả định có `nlohmann/json`.
+Chấp nhận Python 3 (`python`) hoặc C++17 (`cpp`), một tệp UTF-8 tối đa **100 000 byte**. Nộp hàm `choose_move(state)` cho Python hoặc `Move chooseMove(const BoardState& state)` cho C++. Có thể thêm hàm phụ và dùng thư viện chuẩn. Không nộp `main()`, vòng đọc input hoặc mã in nước đi; hệ thống cung cấp phần chạy, phân tích JSON và xuất kết quả. Không nhận ZIP, project nhiều tệp hoặc file thực thi. Không cài thêm thư viện lúc chạy. C++ không cần `nlohmann/json`.
 
 Lệnh biên dịch chuẩn:
 
@@ -211,11 +229,11 @@ Lệnh biên dịch chuẩn:
 g++ -std=c++17 -O2 -pipe -static -s
 ```
 
-File thực thi tối đa **5 000 000 byte**. BTC công bố phiên bản Python, g++, image sandbox và cấu hình trước cửa sổ nộp.
+Hệ thống ghép kiểu dữ liệu và phần chạy với hàm C++ trước khi biên dịch bằng các cờ trên. File thực thi tối đa **5 000 000 byte**. BTC công bố phiên bản Python, g++, image sandbox và cấu hình trước cửa sổ nộp.
 
 ### 9.2. Input và output
 
-Bot chạy liên tục trong một ván, đọc một dòng JSON từ `stdin` mỗi lượt và xuất một dòng JSON ra `stdout`, rồi flush. Không giữ giả định bộ nhớ qua ván. Không in debug ra `stdout`; dùng `stderr`.
+Phần chạy do hệ thống cung cấp đọc một dòng JSON từ `stdin` mỗi lượt, gọi hàm của đội một lần, rồi xuất một dòng JSON ra `stdout` và flush. Đội chỉ xử lý trạng thái đã được phân tích và trả về nước đi. Tiến trình chạy liên tục trong một ván; không giữ giả định bộ nhớ qua ván. Không in debug ra `stdout`; dùng `stderr`.
 
 Bot nhận một JSON object qua `stdin` mỗi khi đến lượt, với các trường bắt buộc sau:
 
@@ -289,21 +307,65 @@ Output là một JSON object có đúng hai trường chuỗi `piece_id` và `to
 
 Cặp giá trị phải khớp một phần tử của `legal_moves`. Với input ví dụ, phản hồi trên chọn quân Lá `S01` từ `c1` đến `d2` để ăn quân Đấm `N02`. Không gửi `from` hoặc `capture` trong output.
 
-Mỗi lượt đúng một phản hồi; không gửi trước phản hồi cho lượt chưa nhận. Dòng tối đa 256 byte UTF-8, gồm ký tự xuống dòng. Phải flush sau mỗi phản hồi. Không yêu cầu tên hàm nội bộ; hệ thống chạy toàn bộ chương trình. Khi ván kết thúc, tiến trình được dừng; ván mới khởi động tiến trình mới.
+Mỗi lượt đúng một phản hồi; không gửi trước phản hồi cho lượt chưa nhận. Dòng tối đa 256 byte UTF-8, gồm ký tự xuống dòng. Phần chạy hệ thống tự flush sau mỗi phản hồi. Hàm phải có đúng tên và chữ ký nêu dưới đây. Khi ván kết thúc, tiến trình được dừng; ván mới khởi động tiến trình mới. Engine không gọi hàm khi không có nước hợp lệ.
 
-Bot Python tối thiểu:
+#### C++17: trạng thái có kiểu sẵn
+
+Chỉ nộp hàm và các hàm phụ cần thiết. Các kiểu sau do hệ thống cung cấp, không cần khai báo lại:
+
+```cpp
+struct Piece {
+    std::string id, side, type;
+    int x, y;
+};
+struct Move {
+    std::string piece_id, from, to;
+    std::optional<std::string> capture;
+};
+struct BoardState {
+    int protocol_version, move_number, board_size;
+    std::string side;
+    std::vector<Piece> pieces;
+    std::vector<Move> legal_moves;
+    std::array<std::array<std::optional<Piece>, 9>, 9> board;
+    const Piece* at(int x, int y) const;
+};
+```
+
+`state.at(x, y)` trả về con trỏ tới quân tại ô đó, hoặc `nullptr` nếu ô trống hay ngoài bàn. `state.board[y][x]` là `std::optional<Piece>`; kiểm tra có giá trị trước khi dùng `->id`, `->side`, `->type`. Chỉ truy cập mảng với tọa độ 0 đến 8. Trạng thái được dựng mới mỗi lượt, nên quân bị ăn không còn trong `pieces` hoặc `board`. Con trỏ từ `at()` chỉ dùng trong lần gọi hàm hiện tại.
+
+Mã mẫu nộp được ngay:
+
+```cpp
+// API: chooseMove(const BoardState& state) returns Move.
+// state: side, move_number, board_size, pieces, legal_moves.
+// Piece: id, side, type, x, y (coordinates 0..8).
+// Move: piece_id, from, to, capture (optional<string>).
+// state.at(x,y): const Piece* or nullptr for an empty square.
+// state.board[y][x]: optional<Piece>. Types are provided.
+// Return a legal move. No main() or input/output code.
+Move chooseMove(const BoardState& state) {
+    // Viết thuật toán của bạn tại đây.
+    return state.legal_moves.front();
+}
+```
+
+Trả về một `Move` trong `state.legal_moves`. Có thể ưu tiên nước ăn bằng cách kiểm tra `move.capture.has_value()`. Hệ thống chỉ xuất `piece_id` và `to` của nước được trả về; judge kiểm tra nước đó có hợp lệ hay không.
+
+#### Python 3: trạng thái dạng dict
+
+`state` là dict theo bảng trường JSON phía trên. Hàm trả về một phần tử của `state["legal_moves"]` hoặc dict có hai chuỗi `piece_id` và `to`. Hệ thống tự bỏ các trường `from`, `capture` khi xuất JSON.
 
 ```python
-import json
-import sys
-
-for line in sys.stdin:
-    state = json.loads(line)
-    moves = state["legal_moves"]
-    if not moves:
-        break
-    move = moves[0]
-    print(json.dumps({"piece_id": move["piece_id"], "to": move["to"]}), flush=True)
+# API: choose_move(state) returns a move dict.
+# state: side, move_number, board_size, pieces, legal_moves.
+# Piece: id, side, type, x, y (coordinates 0..8).
+# Move: piece_id, from, to, capture (None or enemy ID).
+# Return a legal move, or {"piece_id": ..., "to": ...}.
+# Judge handles input/output. Add helper functions as needed.
+def choose_move(state):
+    # Viết thuật toán của bạn tại đây.
+    return state["legal_moves"][0]
 ```
 
 ### 9.3. Giới hạn
@@ -355,25 +417,29 @@ Sửa kết quả đã tính hoặc chuyển trận thành kết quả hành ch�
 
 BTC xác nhận cấu hình, bảng, nhánh, cửa sổ nộp, khóa bot, các mốc chốt kết quả và xử lý sự cố. Worker nhận job từ hàng chờ chung; `WORKER_ID` chỉ là nhãn, không bảo đảm một đội chạy trên một máy cụ thể. Website/API và database có thể ở Render; bot chạy trong Docker của worker nhận job. Không có worker thì job có thể chờ dù website vẫn truy cập được.
 
+BTC có thể bật **Tự động điều hành khi đến hạn** để ủy quyền worker khóa đăng ký, xác nhận bảng/nhánh đã tính theo luật, mở cửa sổ nộp, khóa bot, chạy các lượt, phân hạng và chốt vòng. Worker dùng các kiểm tra thông thường, không tự force, giữ thời hạn khiếu nại 30 phút ở vòng bảng và không bỏ qua bài đang kiểm tra, hold hoặc lỗi hạ tầng. Loại trực tiếp chạy liên tục trong cùng vòng, kể cả các cặp phụ; kết quả đủ ván được chốt ngay nếu không có hold, không chờ 30 phút tự động. Các thao tác tự động được lưu với người thực hiện `scheduler`; bật/tắt chế độ cũng được ghi nhật ký.
+
+Giờ đã lưu của vòng được giữ nguyên. Với vòng mới chưa có lịch, chế độ tự động mở cửa sổ ngay khi vòng được tạo và đóng sau thời lượng BTC đặt, mặc định 1440 phút. Mỗi vòng loại trực tiếp (tứ kết, bán kết, chung kết hoặc vòng trước đó) có cửa sổ nộp riêng, chỉ mở sau khi mọi suất đi tiếp của vòng trước đã chốt; không mở riêng cho đội thắng sớm. Kế thừa bot tương thích theo mục 7 khi không có bài ready mới. BTC có thể tắt tự động ở bất kỳ giai đoạn hoạt động nào; các ván đã đưa vào hàng chờ vẫn được xử lý. Khi khôi phục worker, hệ thống tiếp tục từ trạng thái đã lưu, không tạo trùng ván hoặc suất đi tiếp.
+
 Replay là dựng lại nước đi đã lưu, không phải video hoặc luồng trực tiếp. Bot của đội không cần người chơi trực tuyến khi thi đấu.
 
 ### 11.2. Lỗi hạ tầng và hủy trận
 
 Giữ nguyên ván đã hoàn tất hợp lệ. Kiểm tra và chạy lại riêng ván bị ảnh hưởng bằng đúng submission khóa, phe, thế cờ, phiên bản luật và môi trường của ván gốc. Không cho sửa bot trong lúc chờ chạy lại. Nếu cần chuyển worker, môi trường phải tương đương cấu hình đã khóa.
 
-Lưu lý do, ván bị ảnh hưởng, worker, cấu hình, lần thử và người thao tác. Mã thoát 64/70/71 chỉ là tín hiệu kỹ thuật, không đủ để tự kết luận đội có lỗi.
+Lưu ván bị ảnh hưởng, worker, cấu hình, lần thử và người thao tác; lý do dạng văn bản là tùy chọn. Mã thoát 64/70/71 chỉ là tín hiệu kỹ thuật, không đủ để tự kết luận đội có lỗi.
 
-BTC công bố hạn xử lý sự cố cho lịch giải trước khi mở đăng ký; nếu chưa công bố thì chưa được xác nhận giải. Đến hạn mà chưa khôi phục được, hoãn lượt hoặc vòng liên quan và công bố lịch mới. Không bốc thăm, tự cộng thắng hoặc biến lỗi hạ tầng thành lỗi bot để chạy tiếp nhánh.
+BTC có thể công bố hạn xử lý sự cố và lịch hoãn; để trống chính sách không chặn mở hoặc xác nhận giải. Nếu đã công bố hạn mà chưa khôi phục được, hoãn lượt hoặc vòng liên quan và công bố lịch mới. Không bốc thăm, tự cộng thắng hoặc biến lỗi hạ tầng thành lỗi bot để chạy tiếp nhánh.
 
-Chỉ được hủy encounter mà không thay thế khi hủy toàn bộ lượt/vòng/giải liên quan, hoặc khi đội rút/bị loại theo mục 8. Hủy do hạ tầng không tạo điểm trận hay Elo; ván hợp lệ còn lại được giữ để tra cứu và không đủ để tự quyết định trận thiếu ván. Nếu hủy vòng/giải, không công bố kết quả vô địch dựa trên các encounter chưa hoàn tất. Mọi lần hủy phải có lý do và phạm vi công khai.
+Chỉ được hủy encounter mà không thay thế khi hủy toàn bộ lượt/vòng/giải liên quan, hoặc khi đội rút/bị loại theo mục 8. Hủy do hạ tầng không tạo điểm trận hay Elo; ván hợp lệ còn lại được giữ để tra cứu và không đủ để tự quyết định trận thiếu ván. Nếu hủy vòng/giải, không công bố kết quả vô địch dựa trên các encounter chưa hoàn tất. Phạm vi hủy được lưu và công khai; lý do dạng văn bản là tùy chọn.
 
 ### 11.3. Khiếu nại và chốt kết quả
 
-Công bố kết quả tạm cùng điểm, lý do kết thúc, submission ID và replay/log được phép xem. Hạn khiếu nại là 30 phút kể từ thời điểm muộn hơn giữa công bố kết quả và dữ liệu đối chiếu được cung cấp cho đội. Với kết quả hành chính không có replay, dùng thời điểm công bố quyết định cùng căn cứ.
+Công bố kết quả tạm cùng điểm, lý do kết thúc, submission ID và replay/log được phép xem. Ở vòng bảng và phân hạng, hạn khiếu nại là 30 phút kể từ thời điểm muộn hơn giữa công bố kết quả và dữ liệu đối chiếu được cung cấp cho đội. Với kết quả hành chính vòng bảng không có replay, dùng thời điểm công bố quyết định cùng căn cứ. Loại trực tiếp không có khoảng chờ khiếu nại tự động: kết quả đủ ván có thể chốt ngay; báo cáo được BTC ghi thành hold sẽ dừng tiến trình liên quan để xử lý.
 
-Đội nộp khiếu nại qua kênh chính thức được BTC công bố trước giải. BTC lưu người xử lý, bằng chứng, quyết định và thời điểm. Không chốt suất đi tiếp của kết quả còn trong hạn hoặc đang có khiếu nại hợp lệ. Nếu sửa kết quả, công bố dữ liệu mới và mở lại 30 phút cho phần đã sửa. Hoãn lịch phụ thuộc khi cần.
+BTC có thể công bố kênh chính thức để đội nộp khiếu nại; trường liên hệ trên website là tùy chọn. BTC lưu người xử lý, loại quyết định và thời điểm; nội dung quyết định và bằng chứng là tùy chọn. Không chốt suất đi tiếp của kết quả còn trong hạn hoặc đang có khiếu nại hợp lệ. Nếu sửa kết quả vòng bảng, công bố dữ liệu mới và mở lại 30 phút cho phần đã sửa. Sửa kết quả loại trực tiếp trong lúc xử lý báo cáo phải giữ hold cho tới khi có quyết định giải quyết. Không sửa trực tiếp suất đi tiếp của vòng đã chốt. Hoãn lịch phụ thuộc khi cần.
 
-Bảng được chốt sau khi mọi trận cần thiết, phân hạng và khiếu nại liên quan đã hoàn tất. Chỉ xác nhận nhánh sau mốc này và xử lý đội rút trước xác nhận. Mỗi vòng knockout chỉ mở vòng tiếp theo sau khi các suất đi tiếp liên quan được chốt.
+Bảng được chốt sau khi mọi trận cần thiết, phân hạng và khiếu nại liên quan đã hoàn tất. Chỉ xác nhận nhánh sau mốc này và xử lý đội rút trước xác nhận. Mỗi vòng knockout chỉ mở vòng tiếp theo sau khi tất cả các suất đi tiếp của vòng hiện tại được chốt. Khi bật tự động, các ván chạy liên tục; chỉ dừng để nhận bot ở ranh giới vòng, xử lý hold/báo cáo hoặc lỗi hạ tầng.
 
 ### 11.4. Phiên bản luật
 
@@ -383,7 +449,7 @@ Không hồi tố luật mới để sửa kết quả đã hợp lệ theo lu�
 
 ## 12. Thể thức giải 14 đội
 
-Với N=14, M=4, Q=2, chia bảng A và B mỗi bảng 4 đội, bảng C và D mỗi bảng 3 đội. Mỗi bảng chọn 2 đội đủ điều kiện đi tiếp, tạo nhánh tứ kết 8 đội không có BYE khi đủ suất.
+Với giải có 14 đội, tối đa 4 đội mỗi bảng và 2 suất đi tiếp mỗi bảng, chia bảng A và B mỗi bảng 4 đội, bảng C và D mỗi bảng 3 đội. Mỗi bảng chọn 2 đội đủ điều kiện đi tiếp, tạo nhánh tứ kết 8 đội không có BYE khi đủ suất.
 
 Đội ở bảng 4 đội chơi 3 trận, tương ứng 6 ván vòng bảng; đội ở bảng 3 đội chơi 2 trận, tương ứng 4 ván. Xếp hạng trong bảng theo mục 5; so hạt giống giữa các bảng khác kích thước dùng các tỷ lệ ở mục 6.1.
 

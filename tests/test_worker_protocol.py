@@ -3,10 +3,18 @@ import sys
 import time
 import unittest
 
-from app.worker import read_line_timeout
+from app.worker import read_line_timeout, parse_reply
 
 
 class WorkerProtocolTests(unittest.TestCase):
+    def test_official_output_schema(self):
+        moves=[{"piece_id":"S01","to":"b2"}]
+        self.assertEqual(parse_reply(b'{"piece_id":"S01","to":"b2"}\n',moves),moves[0])
+        for raw in (b'{"piece_id":"S01","to":"b2","debug":1}\n',
+                    b'{"piece_id":"S01","to":"a1","to":"b2"}\n',
+                    b'{"piece_id":1,"to":"b2"}\n', b'["S01","b2"]\n',
+                    b'{"piece_id":"S01","to":"b2"}', b'{"piece_id":"S01","to":"b3"}\n'):
+            self.assertIsNone(parse_reply(raw,moves))
     def start_writer(self, source):
         return subprocess.Popen(
             [sys.executable, "-u", "-c", source],

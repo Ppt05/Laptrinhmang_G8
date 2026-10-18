@@ -52,7 +52,7 @@ class WorkerFlowTests(unittest.TestCase):
         self.assertEqual(detail["turns"][1]["side"], "north")
 
     def test_partial_output_loses_without_hanging(self):
-        bad = self.submission(3, "import sys,time\nfor line in sys.stdin:\n print('{', end='', flush=True)\n time.sleep(5)\n")
+        bad = self.submission(3, "import time\ndef choose_move(state):\n print('{', end='', flush=True)\n time.sleep(5)\n")
         good = self.submission(4, Path("examples/bot_greedy.py").read_text(encoding="utf-8"))
         db = FakeDb([bad, good])
         worker.compile_submission(db, bad)
@@ -67,7 +67,7 @@ class WorkerFlowTests(unittest.TestCase):
         self.assertEqual(json.loads(match.detail)["win_reason"], "invalid_move_or_timeout")
 
     def test_exited_bot_loses_instead_of_failing_match(self):
-        bad = self.submission(5, "raise SystemExit(0)\n")
+        bad = self.submission(5, "def choose_move(state):\n raise SystemExit(0)\n")
         good = self.submission(6, Path("examples/bot_greedy.py").read_text(encoding="utf-8"))
         db = FakeDb([bad, good])
         worker.compile_submission(db, bad)
@@ -78,6 +78,29 @@ class WorkerFlowTests(unittest.TestCase):
         worker.play_match(db, match)
         self.assertEqual(match.status, "done")
         self.assertEqual(match.winner_id, 6)
+
+    def test_tournament_protocol_validation_both_sides_and_cpp_game(self):
+        a=self.submission(7,Path("examples/bot_greedy.py").read_text())
+        b=self.submission(8,Path("examples/bot_first.cpp").read_text())
+        b.language="cpp"
+        db=FakeDb([a,b])
+        worker.compile_submission(db,a,validate=True)
+        worker.compile_submission(db,b,validate=True)
+        self.assertEqual((a.status,b.status),("ready","ready"),(a.compile_error,b.compile_error))
+        match=SimpleNamespace(submission_a=7,submission_b=8,player_a=7,player_b=8,status="queued",detail=None,
+                              winner_id=None,points_a=0,points_b=0)
+        worker.play_match(db,match)
+        self.assertEqual(match.status,"done")
+        self.assertGreater(len(json.loads(match.detail)["turns"]),2)
+
+    def test_tournament_protocol_rejects_one_shot_and_extra_output(self):
+        sources=[
+            'calls=0\ndef choose_move(state):\n global calls\n calls+=1\n if calls>1: raise SystemExit(0)\n return state["legal_moves"][0]\n',
+            'import json\ndef choose_move(state):\n m=state["legal_moves"][0]\n print(json.dumps({"piece_id":m["piece_id"],"to":m["to"]}),flush=True)\n return m\n']
+        for i,source in enumerate(sources,9):
+            submission=self.submission(i,source)
+            worker.compile_submission(FakeDb([submission]),submission,validate=True)
+            self.assertEqual(submission.status,"failed")
 
 
 if __name__ == "__main__":
