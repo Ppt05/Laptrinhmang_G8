@@ -45,7 +45,7 @@ docker compose ps
 docker compose logs -f api worker
 ```
 
-Mở [trang đội](http://localhost:8000/) và [trang BTC](http://localhost:8000/admin). Dừng bằng `docker compose down`; không dùng `-v` nếu cần giữ dữ liệu.
+Mở [trang đội](https://oantuti-demo.onrender.com/) và [trang BTC]https://oantuti-demo.onrender.com/admin). Dừng bằng `docker compose down`; không dùng `-v` nếu cần giữ dữ liệu.
 
 `ADMIN_API_KEY` ký phiên đăng nhập BTC và cũng dùng được qua `X-Admin-Key`. Đội dùng phiên đăng nhập hiện có qua `Authorization: Bearer ...`. `REGISTRATION_OPEN` điều khiển việc tạo tài khoản, độc lập với đăng ký tham gia Tournament. `AUTO_PAIR_ENABLED` không bật lại Daily trong bản này. Tournament dùng lịch tự động hoặc nút BTC, không phụ thuộc lịch Daily cũ hoặc `MATCHES_ENABLED`.
 
