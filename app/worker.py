@@ -1,4 +1,4 @@
-import base64, json, logging, os, re, secrets, selectors, struct, subprocess, tempfile, threading, time
+import base64, json, logging, os, queue, re, secrets, selectors, struct, subprocess, tempfile, threading, time, weakref
 from contextvars import ContextVar
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -19,6 +19,29 @@ JUDGE_ENV = ContextVar("judge_environment", default=None)
 WORKER_ID = os.getenv("WORKER_ID", "may-1")
 # OTTv2 tactical board game: coordinates use a1=(0,0), i9=(8,8).
 BEATS = {"rock": "scissors", "scissors": "paper", "paper": "rock"}
+_PIPE_READERS = weakref.WeakKeyDictionary()
+_PIPE_READERS_LOCK = threading.Lock()
+
+def _pipe_reader(stream):
+    """Windows cannot select() on subprocess pipes; drain each pipe in a thread."""
+    with _PIPE_READERS_LOCK:
+        reader = _PIPE_READERS.get(stream)
+        if reader is None:
+            reader = queue.Queue()
+            _PIPE_READERS[stream] = reader
+
+            def pump():
+                try:
+                    while True:
+                        chunk = os.read(stream.fileno(), 256)
+                        reader.put(chunk)
+                        if not chunk:
+                            return
+                except OSError:
+                    reader.put(None)
+
+            threading.Thread(target=pump, daemon=True).start()
+        return reader
 
 def legal_moves(game, side):
     occupied = {(p["x"], p["y"]): p for p in game["pieces"]}
@@ -142,9 +165,19 @@ def read_line_timeout(stream, timeout, pending):
             if len(pending) >= 256:
                 return None
             remaining = deadline - time.monotonic()
-            if remaining <= 0 or not sel.select(remaining):
-                return None
-            chunk = os.read(stream.fileno(), 256)
+            if os.name == "nt":
+                if remaining <= 0:
+                    return None
+                try:
+                    chunk = _pipe_reader(stream).get(timeout=remaining)
+                except queue.Empty:
+                    return None
+                if chunk is None:
+                    return None
+            else:
+                if remaining <= 0 or not sel.select(remaining):
+                    return None
+                chunk = os.read(stream.fileno(), 256)
             if not chunk:
                 return None
             pending.extend(chunk)
@@ -153,6 +186,15 @@ def read_line_timeout(stream, timeout, pending):
 def unsolicited(proc, pending):
     if pending:
         return True
+    if os.name == "nt":
+        try:
+            chunk = _pipe_reader(proc.stdout).get_nowait()
+        except queue.Empty:
+            return False
+        if chunk:
+            pending.extend(chunk)
+            return True
+        return False
     with selectors.DefaultSelector() as sel:
         sel.register(proc.stdout, selectors.EVENT_READ)
         if sel.select(0):
@@ -301,9 +343,14 @@ def play_match(db: Session, m: Match):
         if not game["winner"] and not game["win_reason"]:
             game["win_reason"] = "move_limit_draw"
         winner = game["winner"]
-        if winner == side_a: m.points_a = 1; m.winner_id = m.player_a; m.points_b = 0
-        elif winner == side_b: m.points_b = 1; m.winner_id = m.player_b; m.points_a = 0
-        else: m.points_a = m.points_b = 0.5; m.winner_id = None
+        if winner == side_a: m.winner_id = m.player_a
+        elif winner == side_b: m.winner_id = m.player_b
+        else: m.winner_id = None
+        if getattr(m, "kind", None) == "practice":
+            m.points_a = m.points_b = 0
+        elif winner == side_a: m.points_a, m.points_b = 1, 0
+        elif winner == side_b: m.points_a, m.points_b = 0, 1
+        else: m.points_a = m.points_b = 0.5
         m.detail = json.dumps({"protocol_version": 2, "winner_side": winner, "win_reason": game["win_reason"],
                                "turns": turns, "final_pieces": game["pieces"]})
         m.status = "done"
@@ -403,7 +450,12 @@ def process(job_id, instance_token):
                     game = db.get(Match, payload["match_id"])
                     if game and game.encounter_id:
                         round_id = db.get(tournament.Encounter, game.encounter_id).round_id
+                    elif game and game.kind == "practice":
+                        environment_token = JUDGE_ENV.set(tournament.environment())
                 if round_id:
+                    if environment_token is not None:
+                        JUDGE_ENV.reset(environment_token)
+                        environment_token = None
                     environment_token = JUDGE_ENV.set(json.loads(db.get(TournamentRound, round_id).environment))
                 if job.kind == "compile":
                     s = db.get(Submission, payload["submission_id"])

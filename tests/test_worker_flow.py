@@ -51,6 +51,22 @@ class WorkerFlowTests(unittest.TestCase):
         self.assertEqual(detail["turns"][0]["side"], "south")
         self.assertEqual(detail["turns"][1]["side"], "north")
 
+    def test_practice_match_stores_no_league_points(self):
+        source = Path("examples/bot_greedy.py").read_text(encoding="utf-8")
+        sample = Path("examples/bot_random.py").read_text(encoding="utf-8")
+        a = self.submission(11, source)
+        b = self.submission(12, sample)
+        db = FakeDb([a, b])
+        worker.compile_submission(db, a)
+        worker.compile_submission(db, b)
+        match = SimpleNamespace(submission_a=11, submission_b=12, player_a=101,
+                                player_b=102, status="queued", detail=None,
+                                winner_id=None, points_a=0, points_b=0, kind="practice")
+        worker.play_match(db, match)
+        self.assertEqual(match.status, "done")
+        self.assertEqual((match.points_a, match.points_b), (0, 0))
+        self.assertIn("turns", json.loads(match.detail))
+
     def test_partial_output_loses_without_hanging(self):
         bad = self.submission(3, "import time\ndef choose_move(state):\n print('{', end='', flush=True)\n time.sleep(5)\n")
         good = self.submission(4, Path("examples/bot_greedy.py").read_text(encoding="utf-8"))

@@ -248,3 +248,15 @@ class GameAttempt(Base):
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class PracticeRequest(Base):
+    __tablename__ = "practice_requests"
+    __table_args__ = (UniqueConstraint("player_id", "idempotency_key", name="uq_practice_request_key"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128))
+    opponent_id: Mapped[str] = mapped_column(String(40))
+    submission_id: Mapped[int] = mapped_column(ForeignKey("submissions.id"))
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)

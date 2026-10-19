@@ -26,6 +26,8 @@ def ensure_schema():
         connection.execute(text("ALTER TABLE matches ADD COLUMN IF NOT EXISTS game_number INTEGER"))
         connection.execute(text("CREATE INDEX IF NOT EXISTS ix_matches_encounter_id ON matches (encounter_id)"))
         connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_encounter_game ON matches (encounter_id, game_number)"))
+        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_practice_request_key ON practice_requests (player_id, idempotency_key)"))
+        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_practice_request_match ON practice_requests (match_id)"))
         connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_active_tournament ON tournaments ((1)) WHERE status NOT IN ('complete', 'cancelled')"))
         connection.execute(text("ALTER TABLE tournament_actions ADD COLUMN IF NOT EXISTS appeal_until TIMESTAMPTZ"))
         connection.execute(text("ALTER TABLE tournament_actions ADD COLUMN IF NOT EXISTS notice_hidden_at TIMESTAMPTZ"))

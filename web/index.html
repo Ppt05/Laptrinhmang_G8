@@ -3,24 +3,32 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#10294b">
-  <meta name="description" content="Cuộc thi lập trình bot Oẳn Tù Tì chiến thuật OTTv2.">
-  <title>Oẳn Tù Tì — Thi đấu lập trình</title>
+  <meta name="theme-color" content="#eaf5ff">
+  <meta name="description" content="RPS Code Clash • Đấu trường thuật toán Kéo-Búa-Bao.">
+  <title>RPS Code Clash • Đấu trường thuật toán Kéo-Búa-Bao</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/app.css?v=9">
-  <link rel="stylesheet" href="/assets/status.css?v=4">
-  <link rel="stylesheet" href="/assets/tournament.css?v=6">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" crossorigin="anonymous">
+  <script>
+    const assetRoot = location.protocol === 'file:' ? '' : '/assets/';
+    for (const [file, version] of [['app.css', '15'], ['status.css', '4'], ['tournament.css', '6'], ['cloudlight.css', '1']]) {
+      const stylesheet = document.createElement('link');
+      stylesheet.rel = 'stylesheet';
+      stylesheet.href = `${assetRoot}${file}?v=${version}`;
+      document.head.append(stylesheet);
+    }
+  </script>
 </head>
 <body>
+  <div id="cloudEffect" class="cloudlight-container" aria-hidden="true"><canvas class="cloudlight-canvas"></canvas></div>
   <header class="topbar">
-    <a class="brand" href="#top" aria-label="Oẳn Tù Tì, về đầu trang">
-      <span>Oẳn Tù Tì chiến thuật · Thi đấu bằng lập trình</span>
+    <button id="sidebarToggle" class="sidebar-toggle" type="button" aria-label="Mở thanh điều hướng" aria-controls="siteSidebar" aria-expanded="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+    </button>
+    <a class="brand" href="#top" aria-label="RPS Code Clash, về đầu trang">
+      <span>RPS Code Clash • Đấu trường thuật toán Kéo-Búa-Bao</span>
     </a>
-    <nav aria-label="Điều hướng chính">
-      <button class="nav-link" type="button" data-open-rules>Thể lệ dự thi</button><a href="#thi-dau">Thi đấu</a><button class="nav-link" type="button" data-open-replay>Xem trận</button><button class="nav-link" type="button" data-open-leaderboard>Bảng xếp hạng</button>
-    </nav>
     <div class="account-actions">
       <button id="navLogin" class="button button-outline button-small" type="button">Đăng nhập</button>
       <button id="navRegister" class="button button-navy button-small" type="button">Đăng ký</button>
@@ -28,17 +36,48 @@
     </div>
   </header>
 
+  <button id="sidebarBackdrop" class="sidebar-backdrop" type="button" aria-label="Đóng thanh điều hướng" tabindex="-1"></button>
+  <aside id="siteSidebar" class="site-sidebar" aria-label="Điều hướng chính">
+    <nav class="sidebar-nav">
+      <a class="sidebar-link" href="#top" aria-label="Trang chủ" title="Trang chủ">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z" /></svg><span>Trang chủ</span>
+      </a>
+      <button class="sidebar-link" type="button" data-open-rules aria-label="Thể lệ dự thi" title="Thể lệ dự thi">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h7" /></svg><span>Thể lệ dự thi</span>
+      </button>
+      <a class="sidebar-link" href="#thi-dau" aria-label="Khu vực thi đấu" title="Khu vực thi đấu">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4h8v4a4 4 0 0 1-8 0zm0 2H4v2a4 4 0 0 0 4 4m8-6h4v2a4 4 0 0 1-4 4m-4 0v4m-4 4h8m-7-4h6" /></svg><span>Khu vực thi đấu</span>
+      </a>
+      <button class="sidebar-link" type="button" data-open-replay aria-label="Xem trận" title="Xem trận">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM10 9l5 3-5 3z" /></svg><span>Xem trận</span>
+      </button>
+      <button class="sidebar-link" type="button" data-open-leaderboard aria-label="Bảng xếp hạng" title="Bảng xếp hạng">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9h4v10zm6 0V4h4v15zm6 0v-7h4v7z" /></svg><span>Bảng xếp hạng</span>
+      </button>
+      <div class="sidebar-divider" role="separator"></div>
+      <p class="sidebar-group-label">CHẾ ĐỘ</p>
+      <button id="modeTournament" class="sidebar-link sidebar-mode active" type="button" data-mode="tournament" aria-label="Tournament, Thi đấu giải" aria-pressed="true" title="Tournament · Thi đấu giải">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4h8v4a4 4 0 0 1-8 0zm0 2H4v2a4 4 0 0 0 4 4m8-6h4v2a4 4 0 0 1-4 4m-4 0v4m-4 4h8m-7-4h6" /></svg><span><strong>Tournament</strong><small>Thi đấu giải</small></span>
+      </button>
+      <button id="modePractice" class="sidebar-link sidebar-mode" type="button" data-mode="practice" aria-label="Practice, Luyện tập với bot mẫu" aria-pressed="false" title="Practice · Luyện tập với bot mẫu">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="7" width="16" height="13" rx="3"/><path d="M9 7V4m6 3V4M8 13h.01M16 13h.01m-6 3h4M2 12h2m16 0h2" /></svg><span><strong>Practice</strong><small>Luyện tập với bot mẫu</small></span>
+      </button>
+    </nav>
+  </aside>
+
   <main id="top">
     <section class="hero wrap">
       <div class="hero-copy">
-        <div class="eyebrow"><span class="live-dot"></span> CUỘC THI LẬP TRÌNH BOT</div>
-        <h1>Viết bot.<br><span>Làm chủ bàn cờ.</span></h1>
-        <p class="hero-text">Lập trình bot của bạn, đưa lên bàn cờ OTTv2 và xem chiến thuật đối đầu qua từng nước đi.</p>
+        <div class="eyebrow"><i class="fa-solid fa-robot" aria-hidden="true"></i> CUỘC THI LẬP TRÌNH BOT</div>
+        <h1 class="hero-3d-heading" aria-label="Viết bot. Làm chủ bàn cờ.">
+          <span class="hero-3d-line">Viết bot.</span>
+          <span class="hero-3d-line hero-3d-accent">Làm chủ bàn cờ.</span>
+        </h1>
         <div class="hero-actions">
           <a class="button button-blue" href="#thi-dau">Tham gia cuộc thi <span aria-hidden="true">→</span></a>
           <button class="button button-outline" type="button" data-open-rules>Xem thể lệ dự thi</button>
         </div>
-        <div class="hero-facts"><span><b>9×9</b> bàn cờ</span><span><b>C++ / Python</b> ngôn ngữ</span><span><b>OTTv2</b> chiến thuật</span></div>
+        <div class="hero-facts"><span><b>9×9</b> bàn cờ</span><span><b>C++ / Python</b> ngôn ngữ</span></div>
       </div>
       <div class="board-card" aria-label="Minh họa bàn cờ Oẳn Tù Tì 9 nhân 9">
         <div class="board-top"><span>OTTv2 / BOARD</span><span class="board-live"><i></i> BOT MATCH</span></div>
@@ -62,7 +101,7 @@
       <div class="wrap">
         <div class="section-heading"><div><div class="eyebrow">KHU VỰC THÍ SINH</div><h2>Đăng ký và thi đấu</h2></div><p>Tạo tài khoản đội để nộp bot. Sau khi đăng nhập, bạn có thể xem trạng thái các lần nộp và lịch sử trận.</p></div>
         <div class="contest-grid">
-        <article id="tournamentPanel" class="panel">
+        <article id="tournamentPanel" class="panel" data-mode-panel="tournament">
           <label>Giải hiện tại và lịch sử<select id="tournamentSelect" aria-label="Chọn giải"></select></label>
           <div id="tournamentSummary" aria-live="polite">Đang tải giải…</div>
           <button id="joinTournament" class="button button-blue hidden" type="button">Tham gia giải</button>
@@ -72,7 +111,7 @@
           <h3>Lịch và kết quả encounter</h3><p>Một encounter gồm nhiều ván. Replay riêng cho từng ván. Kết quả tạm phải hết hạn khiếu nại mới được chốt.</p>
           <div id="tournamentEncounters"></div><details id="tournamentDraws"></details>
         </article>
-          <article class="panel submit-panel">
+          <article class="panel submit-panel" data-mode-panel="tournament">
             <div class="panel-title"><div><div class="eyebrow">BOT SUBMISSION</div><h3>Nộp bài dự thi</h3></div><span class="file-badge">C++17 · Python 3</span></div>
             <p class="muted">Tham gia Tournament trước khi đăng ký bị khóa. Mỗi đội tối đa 3 lần nộp mỗi vòng, kể cả bài lỗi. Bot ready mới nhất được khóa sau hạn; nếu không có, kế thừa bot Tournament tương thích của vòng trước.</p>
             <div id="submitGuestHint" class="empty-state">Đăng nhập hoặc đăng ký đội để nộp bot. <button id="submitLoginLink" class="text-button" type="button">Mở tài khoản →</button></div>
@@ -87,6 +126,19 @@
             </form>
             <div class="protocol-note"><span>?</span><p>Viết hàm chọn nước đi trong mã mẫu. Hệ thống cung cấp trạng thái bàn cờ và xử lý JSON, input/output. <button class="inline-link link-button" type="button" data-open-rules>Xem kiểu dữ liệu và mã mẫu.</button></p></div>
           </article>
+          <article id="practicePanel" class="panel practice-panel hidden" data-mode-panel="practice">
+            <div class="panel-title"><div><div class="eyebrow">PRACTICE MODE</div><h3>Luyện tập với bot mẫu</h3></div><span class="file-badge">1 ván · Không tính điểm</span></div>
+            <p class="muted">Chọn bot mẫu của BTC và bot ready của đội để chơi một ván. Tối đa 10 trận mỗi ngày; Practice không ảnh hưởng điểm giải hoặc Elo.</p>
+            <div id="practiceGuestHint" class="empty-state">Đăng nhập để chọn bot của đội và bắt đầu luyện tập. <button class="text-button" type="button" data-open-account="login">Mở tài khoản →</button></div>
+            <form id="practiceForm" class="hidden">
+              <label>Bot mẫu<select name="opponent_id" required><option value="">Đang tải bot mẫu…</option></select></label>
+              <label>Bot của đội<select name="submission_id" required><option value="">Chọn bot ready</option></select></label>
+              <p id="practiceQuota" class="practice-quota" role="status" aria-live="polite"></p>
+              <button id="practiceSubmit" class="button button-blue full" type="submit" disabled>Bắt đầu Practice <span>→</span></button>
+              <div id="practiceMessage" class="form-message" aria-live="polite"></div>
+            </form>
+            <div id="practiceActive" class="practice-active hidden" role="status" aria-live="polite"></div>
+          </article>
         </div>
       </div>
     </section>
@@ -100,10 +152,9 @@
       </div>
     </section>
 
-    <section class="closing wrap"><div><div class="eyebrow">READY, BOT?</div><h2>Ý tưởng của bạn đi được bao xa?</h2></div><a class="button button-blue" href="#thi-dau">Vào khu vực thi đấu ↑</a></section>
   </main>
 
-  <footer class="footer"><div class="wrap footer-inner"><span>Oẳn Tù Tì chiến thuật · Thi đấu bằng lập trình</span><a href="/admin">Ban tổ chức</a><a href="#top">Về đầu trang ↑</a></div></footer>
+  <footer class="footer"><div class="wrap footer-inner"><span>RPS Code Clash • Đấu trường thuật toán Kéo-Búa-Bao</span><a href="/admin">Ban tổ chức</a><a href="#top">Về đầu trang ↑</a></div></footer>
   <dialog id="leaderboardDialog" class="leaderboard-dialog" aria-labelledby="leaderboardTitle">
     <div class="dialog-heading"><div><div class="eyebrow">OTTv2 · KẾT QUẢ THI ĐẤU</div><h2 id="leaderboardTitle">Bảng xếp hạng</h2></div><button id="closeLeaderboard" class="dialog-close" type="button" aria-label="Đóng bảng xếp hạng">×</button></div>
     <p class="leaderboard-intro">Chọn giải để xem đội và kết quả riêng của giải đó. Elo trong mỗi giải bắt đầu từ 1000, hệ số điều chỉnh 32; BYE và kết quả hành chính không tính Elo.</p>
@@ -179,8 +230,13 @@ def choose_move(state):
     </div>
     <div id="signedIn" class="signed-in hidden"><div class="signed-avatar">♟</div><div class="signed-copy"><span class="eyebrow">ĐỘI ĐANG ĐĂNG NHẬP</span><h3 id="teamName">—</h3><button id="logoutBtn" class="text-button" type="button">Đăng xuất</button></div></div>
   </dialog>
-  <script src="/assets/app.js?v=14" defer></script>
-  <script src="/assets/tournament-rounds.js?v=1" defer></script>
-  <script src="/assets/tournament.js?v=7" defer></script>
+  <script>
+    for (const [file, version] of [['cloudlight.js', '1'], ['letter-3d-swap.js', '1'], ['app.js', '16'], ['tournament-rounds.js', '1'], ['tournament.js', '7']]) {
+      const script = document.createElement('script');
+      script.src = `${assetRoot}${file}?v=${version}`;
+      script.async = false;
+      document.body.append(script);
+    }
+  </script>
 </body>
 </html>

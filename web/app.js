@@ -83,7 +83,65 @@ function paintSession() {
   $("#navRegister").classList.toggle("hidden", signed);
   $("#navAccount").classList.toggle("hidden", !signed);
   $("#dialogTitle").textContent = signed ? "Tài khoản đội" : "Đăng nhập";
+  $("#practiceGuestHint").classList.toggle("hidden", signed);
+  $("#practiceForm").classList.toggle("hidden", !signed);
+  if (!signed) $("#practiceActive").classList.add("hidden");
 }
+
+function setMode(mode) {
+  const practice = mode === "practice";
+  sessionStorage.setItem("ottv2_mode", practice ? "practice" : "tournament");
+  $("#modeTournament").classList.toggle("active", !practice);
+  $("#modePractice").classList.toggle("active", practice);
+  $("#modeTournament").setAttribute("aria-pressed", String(!practice));
+  $("#modePractice").setAttribute("aria-pressed", String(practice));
+  $$('[data-mode-panel="tournament"]').forEach(panel => panel.classList.toggle("hidden", practice));
+  $$('[data-mode-panel="practice"]').forEach(panel => panel.classList.toggle("hidden", !practice));
+  if (practice) refreshPracticeState();
+}
+const sidebar = $("#siteSidebar");
+const sidebarToggle = $("#sidebarToggle");
+const sidebarBackdrop = $("#sidebarBackdrop");
+const mobileSidebar = window.matchMedia("(max-width: 700px)");
+function closeMobileSidebar() {
+  document.body.classList.remove("sidebar-mobile-open");
+  const isExpanded = mobileSidebar.matches ? false : document.body.classList.contains("sidebar-expanded");
+  sidebarToggle.setAttribute("aria-expanded", String(isExpanded));
+  sidebarToggle.setAttribute("aria-label", isExpanded ? "Thu gọn thanh điều hướng" : "Mở thanh điều hướng");
+}
+sidebarToggle.addEventListener("click", () => {
+  if (mobileSidebar.matches) {
+    const isOpen = document.body.classList.toggle("sidebar-mobile-open");
+    sidebarToggle.setAttribute("aria-expanded", String(isOpen));
+    sidebarToggle.setAttribute("aria-label", isOpen ? "Đóng thanh điều hướng" : "Mở thanh điều hướng");
+    if (isOpen) sidebar.querySelector(".sidebar-link")?.focus({ preventScroll: true });
+    return;
+  }
+  const isExpanded = document.body.classList.toggle("sidebar-expanded");
+  sidebarToggle.setAttribute("aria-expanded", String(isExpanded));
+  sidebarToggle.setAttribute("aria-label", isExpanded ? "Thu gọn thanh điều hướng" : "Mở thanh điều hướng");
+});
+sidebarBackdrop.addEventListener("click", closeMobileSidebar);
+sidebar.addEventListener("click", event => {
+  const modeButton = event.target.closest("[data-mode]");
+  if (modeButton) {
+    setMode(modeButton.dataset.mode);
+    $("#thi-dau").scrollIntoView({ behavior: "smooth", block: "start" });
+    closeMobileSidebar();
+    return;
+  }
+  if (event.target.closest(".sidebar-link")) closeMobileSidebar();
+});
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape" && document.body.classList.contains("sidebar-mobile-open")) {
+    closeMobileSidebar();
+    sidebarToggle.focus();
+  }
+});
+mobileSidebar.addEventListener("change", event => {
+  if (!event.matches) closeMobileSidebar();
+});
+$$('[data-open-account]').forEach(button => button.addEventListener("click", () => openAccount(button.dataset.openAccount || "login")));
 
 function showToast(text, error = false) {
   const toast = document.createElement("div");
@@ -368,8 +426,9 @@ async function refreshDashboard() {
       return `<tr><td><strong>#${s.id}</strong></td><td>${s.language === "cpp" ? "C++17" : "Python"}</td><td>${dateText(s.created_at)}</td><td><span class="pill ${displayStatus}">${displayText}</span>${s.compile_error ? `<small class="row-error" title="Lỗi biên dịch">${escapeHtml(s.compile_error)}</small>` : ""}</td></tr>`;
     }).join("");
     $("#submissionEmpty").classList.toggle("hidden", subs.length > 0);
-    $("#matchesBody").innerHTML = matches.map((m) => `<tr><td><strong>#${m.id}</strong><small class="row-sub">${escapeHtml(m.event_day || "")}</small></td><td>${escapeHtml(m.opponent)}</td><td><span class="pill ${m.result}">${({ win: "Thắng", loss: "Thua", draw: "Hòa", void: "Hủy do lỗi hệ thống", pending: "Đang chờ" })[m.result] || m.status}</span>${m.void_reason ? `<small class="row-error">${escapeHtml(m.void_reason)}</small>` : ""}${m.status === "done" ? `<button class="match-replay-link" type="button" data-replay-id="${m.id}">Xem lại trận ↗</button>` : ""}</td><td>${Number(m.points).toLocaleString("vi-VN")}</td></tr>`).join("");
+    $("#matchesBody").innerHTML = matches.map((m) => `<tr><td><strong>#${m.id}</strong><small class="row-sub">${m.kind === "practice" ? "Practice · " : ""}${escapeHtml(m.event_day || "")}</small></td><td>${escapeHtml(m.opponent)}</td><td><span class="pill ${m.result}">${({ win: "Thắng", loss: "Thua", draw: "Hòa", void: "Hủy do lỗi hệ thống", pending: "Đang chờ", failed: "Lỗi hạ tầng" })[m.result] || m.status}</span>${m.void_reason ? `<small class="row-error">${escapeHtml(m.void_reason)}</small>` : ""}${m.status === "done" ? `<button class="match-replay-link" type="button" data-replay-id="${m.id}">Xem lại trận ↗</button>` : m.kind === "practice" && m.status === "failed" ? `<button class="match-replay-link" type="button" data-practice-retry="${m.id}">Chạy lại Practice ↻</button>` : ""}</td><td>${m.kind === "practice" ? "—" : Number(m.points).toLocaleString("vi-VN")}</td></tr>`).join("");
     $("#matchesEmpty").classList.toggle("hidden", matches.length > 0);
+    await refreshPracticeState();
   } catch (error) {
     if (/token|401/i.test(error.message)) { sessionStorage.removeItem(tokenKey); paintSession(); }
   }
@@ -378,7 +437,75 @@ async function refreshDashboard() {
 $("#matchesBody").addEventListener("click", (event) => {
   const button = event.target.closest("[data-replay-id]");
   if (button) openReplay(Number(button.dataset.replayId));
+  const retry = event.target.closest("[data-practice-retry]");
+  if (retry) retryPractice(Number(retry.dataset.practiceRetry));
 });
+
+let practiceOpponentsLoaded = false;
+let pendingPractice = null;
+async function loadPracticeOpponents() {
+  if (practiceOpponentsLoaded) return;
+  const opponents = await request("/api/practice/opponents");
+  $("#practiceForm [name=opponent_id]").innerHTML = opponents.map(o => `<option value="${escapeHtml(o.id)}">${escapeHtml(o.name)} — ${escapeHtml(o.description)}</option>`).join("");
+  practiceOpponentsLoaded = true;
+}
+async function refreshPracticeState() {
+  const button = $("#practiceSubmit");
+  if (!token()) {
+    $("#practiceQuota").textContent = "Đăng nhập và chọn bot ready để bắt đầu.";
+    button.disabled = true;
+    return;
+  }
+  try {
+    await loadPracticeOpponents();
+    const state = await request("/api/practice/state");
+    const select = $("#practiceForm [name=submission_id]");
+    const selected = select.value;
+    select.innerHTML = state.submissions.length
+      ? state.submissions.map(s => `<option value="${s.id}">#${s.id} · ${s.language === "cpp" ? "C++17" : "Python"} · ${dateText(s.created_at)}</option>`).join("")
+      : '<option value="">Chưa có bot ready</option>';
+    if (state.submissions.some(s => String(s.id) === selected)) select.value = selected;
+    $("#practiceQuota").textContent = `Đã dùng ${state.used}/${state.limit} trận hôm nay · Còn ${state.remaining}.`;
+    const active = $("#practiceActive");
+    if (state.active_match) {
+      active.textContent = `Practice #${state.active_match.id}: ${state.active_match.status === "running" ? "đang chạy" : "đang chờ worker"}.`;
+      active.classList.remove("hidden");
+    } else active.classList.add("hidden");
+    button.disabled = !state.submissions.length || state.remaining <= 0 || Boolean(state.active_match);
+  } catch (error) {
+    $("#practiceQuota").textContent = error.message;
+    button.disabled = true;
+  }
+}
+$("#practiceForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  if (!token()) { openAccount("login"); return; }
+  const form = event.currentTarget;
+  const payload = Object.fromEntries(new FormData(form));
+  const encoded = JSON.stringify(payload);
+  if (!pendingPractice || pendingPractice.body !== encoded) pendingPractice = {body: encoded, key: crypto.randomUUID()};
+  const button = $("#practiceSubmit");
+  button.disabled = true;
+  $("#practiceMessage").textContent = "Đang xếp trận Practice…";
+  $("#practiceMessage").classList.remove("error");
+  try {
+    const result = await request("/api/practice", {method:"POST", headers:{"Idempotency-Key":pendingPractice.key}, body:encoded});
+    pendingPractice = null;
+    $("#practiceMessage").textContent = `Đã nhận trận Practice #${result.match_id}; ${result.status === "queued" ? "đang chờ worker" : result.status}.`;
+    refreshDashboard();
+  } catch (error) {
+    $("#practiceMessage").textContent = error.message;
+    $("#practiceMessage").classList.add("error");
+    await refreshPracticeState();
+  }
+});
+async function retryPractice(matchId) {
+  try {
+    const result = await request(`/api/practice/${matchId}/retry`, {method:"POST"});
+    showToast(`Đã đưa Practice #${result.match_id} chạy lại.`);
+    refreshDashboard();
+  } catch (error) { showToast(error.message, true); }
+}
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -426,6 +553,7 @@ async function refreshEventStatus() {
 
 async function init() {
   paintSession();
+  setMode(sessionStorage.getItem("ottv2_mode") || "tournament");
   refreshLeaderboard();
   if (location.hash === "#bang-xep-hang") openLeaderboard();
   if (token()) {

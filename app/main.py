@@ -9,7 +9,8 @@ from sqlalchemy import func, select, text
 from pathlib import Path
 from .db import SessionLocal
 from .game_setup import new_game
-from .models import EventControl, Job, Match, Player, Submission, WorkerNode
+from .models import (EventControl, Job, Match, Player, Submission, WorkerNode,
+                     PracticeRequest, RoundSubmission)
 from .event_schedule import as_vietnam_time, get_event_state, submission_day_bounds
 from .security import authorized_player, check_registration, digest, hash_password, new_token, verify_password
 from .schema import ensure_schema
@@ -32,6 +33,7 @@ class Login(BaseModel): name: str = Field(min_length=2, max_length=60); password
 class ClaimAccount(BaseModel): name: str = Field(min_length=2, max_length=60); registration_token: str; password: str = Field(min_length=8, max_length=128)
 class Submit(BaseModel): language: str; source: str = Field(min_length=1)
 class Challenge(BaseModel): opponent_id: int
+class PracticeInput(BaseModel): opponent_id: str = Field(min_length=1, max_length=40); submission_id: int
 class EventScheduleInput(BaseModel): start_at: datetime; end_at: datetime; enabled: bool
 class AdminLogin(BaseModel): username: str = Field(min_length=1, max_length=80); password: str = Field(min_length=1, max_length=256)
 class VoidMatchInput(BaseModel): reason: str = Field(default="", max_length=500)
@@ -55,6 +57,63 @@ def match_for_teams_on_day(db, team_ids, day, exclude_id=None):
 
 def matches_engine_enabled():
     return os.getenv("MATCHES_ENABLED", "false").lower() == "true"
+
+PRACTICE_LIMIT = 10
+PRACTICE_OPPONENTS = {
+    "first": ("Bot mẫu: First", "bot_first.py"),
+    "greedy": ("Bot mẫu: Greedy", "bot_greedy.py"),
+    "random": ("Bot mẫu: Random", "bot_random.py"),
+}
+
+def practice_opponent_rows(db):
+    """Return stable hidden Player/Submission records backing built-in bots."""
+    db.execute(text("SELECT pg_advisory_xact_lock(74620148)"))
+    examples = Path(__file__).resolve().parents[1] / "examples"
+    rows = {}
+    for key, (name, filename) in PRACTICE_OPPONENTS.items():
+        player_name = f"🤖 Practice Bot · {name}"
+        player = db.scalar(select(Player).where(Player.name == player_name))
+        if player is None:
+            player = Player(name=player_name, token_hash=hashlib.sha256(secrets.token_bytes(32)).hexdigest())
+            db.add(player); db.flush()
+        source = (examples / filename).read_text(encoding="utf-8")
+        submission = db.scalar(select(Submission).where(Submission.player_id == player.id).order_by(Submission.id).limit(1))
+        if submission is None:
+            submission = Submission(player_id=player.id, language="python", source=source, status="ready")
+            db.add(submission); db.flush()
+        elif submission.source != source or submission.language != "python":
+            submission.source, submission.language, submission.status = source, "python", "ready"
+            submission.artifact, submission.compile_error = None, None
+        rows[key] = (player, submission)
+    return rows
+
+def practice_state(db, player_id):
+    today = datetime.now(VN).date().isoformat()
+    used = db.scalar(select(func.count(Match.id)).where(
+        Match.kind == "practice", Match.player_a == player_id, Match.event_day == today)) or 0
+    active = db.scalar(select(Match).where(
+        Match.kind == "practice", Match.player_a == player_id,
+        Match.status.in_(["queued", "running"])).order_by(Match.id.desc()).limit(1))
+    compatible_ids = compatible_practice_submissions(db, player_id)
+    submissions = db.scalars(select(Submission).where(
+        Submission.id.in_(compatible_ids), Submission.status == "ready").order_by(Submission.id.desc())).all() if compatible_ids else []
+    return {
+        "day": today, "limit": PRACTICE_LIMIT, "used": used, "remaining": max(0, PRACTICE_LIMIT - used),
+        "active_match": ({"id": active.id, "status": active.status} if active else None),
+        "submissions": [{"id": s.id, "language": s.language, "created_at": s.created_at.isoformat() if s.created_at else None}
+                        for s in submissions],
+    }
+
+def compatible_practice_submissions(db, player_id):
+    rules = (Path(__file__).resolve().parents[1] / "GAMERULE.md").read_text(encoding="utf-8")
+    current_digest = hashlib.sha256(rules.encode()).hexdigest()
+    current_environment = tournament.environment()
+    links = db.execute(select(RoundSubmission.submission_id, tournament.TournamentRound.rules_digest,
+                              tournament.TournamentRound.environment)
+                       .join(tournament.TournamentRound, RoundSubmission.round_id == tournament.TournamentRound.id)
+                       .where(RoundSubmission.player_id == player_id)).all()
+    return {submission_id for submission_id, digest, environment in links
+            if digest == current_digest and json.loads(environment) == current_environment}
 
 def make_admin_token(username: str) -> str:
     expires = int(time.time()) + 8 * 60 * 60
@@ -105,7 +164,7 @@ def meta():
     with SessionLocal() as db:
         active = db.scalar(select(tournament.Tournament).where(tournament.Tournament.status.not_in(["complete", "cancelled"])))
         return {"name": "OanTuTi Bot League", "protocol_version": 2,
-                "modes": {"tournament": True, "daily": False, "challenge": False, "practice": False},
+                "modes": {"tournament": True, "daily": False, "challenge": False, "practice": True},
                 "tournament": {"id": active.id, "status": active.status} if active else None,
                 **get_event_state(db, matches_engine_enabled())}
 
@@ -268,6 +327,79 @@ def me(player_id: int = Depends(authorized_player)):
         p = db.get(Player, player_id)
         return {"player_id": p.id, "name": p.name}
 
+@app.get("/api/practice/opponents")
+def practice_opponents():
+    return [{"id": key, "name": name, "description": description} for key, (name, description) in {
+        "first": ("First", "Chọn nước hợp lệ đầu tiên."),
+        "greedy": ("Greedy", "Ưu tiên ăn quân và tiến về đích."),
+        "random": ("Random", "Chọn ngẫu nhiên một nước hợp lệ."),
+    }.items()]
+
+@app.get("/api/practice/state")
+def get_practice_state(player_id: int = Depends(authorized_player)):
+    with SessionLocal() as db:
+        return practice_state(db, player_id)
+
+@app.post("/api/practice", status_code=202)
+def create_practice(body: PracticeInput, player_id: int = Depends(authorized_player),
+                    idempotency_key: str | None = Header(default=None)):
+    if not idempotency_key or not idempotency_key.strip() or len(idempotency_key) > 128:
+        raise HTTPException(400, "Cần Idempotency-Key hợp lệ (tối đa 128 ký tự)")
+    idempotency_key = idempotency_key.strip()
+    with SessionLocal.begin() as db:
+        db.execute(text("SELECT pg_advisory_xact_lock(74620149)"))
+        previous = db.scalar(select(PracticeRequest).where(
+            PracticeRequest.player_id == player_id,
+            PracticeRequest.idempotency_key == idempotency_key))
+        if previous:
+            if previous.opponent_id != body.opponent_id or previous.submission_id != body.submission_id:
+                raise HTTPException(409, "Idempotency-Key đã được dùng cho lựa chọn Practice khác")
+            match = db.get(Match, previous.match_id)
+            return {"match_id": match.id, "status": match.status}
+        if body.opponent_id not in PRACTICE_OPPONENTS:
+            raise HTTPException(400, "Bot mẫu không hợp lệ")
+        submission = db.get(Submission, body.submission_id)
+        if (not submission or submission.player_id != player_id or submission.status != "ready" or
+                submission.id not in compatible_practice_submissions(db, player_id)):
+            raise HTTPException(409, "Chọn bot ready thuộc đội của bạn, tương thích với luật và môi trường hiện tại")
+        today = datetime.now(VN).date().isoformat()
+        used = db.scalar(select(func.count(Match.id)).where(
+            Match.kind == "practice", Match.player_a == player_id, Match.event_day == today)) or 0
+        if used >= PRACTICE_LIMIT:
+            raise HTTPException(429, "Bạn đã dùng hết 10 trận Practice hôm nay")
+        active_id = db.scalar(select(Match.id).where(
+            Match.kind == "practice", Match.player_a == player_id,
+            Match.status.in_(["queued", "running"])).limit(1))
+        if active_id:
+            raise HTTPException(409, "Bạn đang có một trận Practice chờ hoặc đang chạy")
+        opponent, bot_submission = practice_opponent_rows(db)[body.opponent_id]
+        match = Match(player_a=player_id, player_b=opponent.id,
+                      submission_a=submission.id, submission_b=bot_submission.id,
+                      event_day=today, kind="practice", status="queued")
+        db.add(match); db.flush()
+        db.add(Job(kind="match", priority=200, payload=json.dumps({"match_id": match.id})))
+        db.add(PracticeRequest(player_id=player_id, idempotency_key=idempotency_key,
+                               opponent_id=body.opponent_id, submission_id=submission.id, match_id=match.id))
+        return {"match_id": match.id, "status": "queued"}
+
+@app.post("/api/practice/{match_id}/retry", status_code=202)
+def retry_practice(match_id: int, player_id: int = Depends(authorized_player)):
+    with SessionLocal.begin() as db:
+        db.execute(text("SELECT pg_advisory_xact_lock(74620149)"))
+        match = db.scalar(select(Match).where(Match.id == match_id).with_for_update())
+        if not match or match.kind != "practice" or match.player_a != player_id:
+            raise HTTPException(404, "Không tìm thấy trận Practice")
+        if match.status != "failed":
+            raise HTTPException(409, "Chỉ có thể chạy lại trận lỗi hạ tầng")
+        active_id = db.scalar(select(Match.id).where(
+            Match.kind == "practice", Match.player_a == player_id,
+            Match.status.in_(["queued", "running"]), Match.id != match_id).limit(1))
+        if active_id:
+            raise HTTPException(409, "Đội đang có một trận Practice chờ hoặc đang chạy")
+        match.status, match.detail = "queued", None
+        db.add(Job(kind="match", priority=200, payload=json.dumps({"match_id": match.id})))
+        return {"match_id": match.id, "status": match.status}
+
 @app.post("/api/submissions")
 def submit(body: Submit, player_id: int = Depends(authorized_player), idempotency_key: str | None = Header(default=None)):
     received = tournament.utcnow()
@@ -302,7 +434,7 @@ def my_matches(player_id: int = Depends(authorized_player)):
             opponent_id = m.player_b if m.player_a == player_id else m.player_a
             opponent = db.get(Player, opponent_id)
             pts = 0 if m.status == "void" else m.points_a if m.player_a == player_id else m.points_b
-            result = "void" if m.status == "void" else "pending" if m.status != "done" else "draw" if m.winner_id is None else "win" if m.winner_id == player_id else "loss"
+            result = "void" if m.status == "void" else "failed" if m.status == "failed" else "pending" if m.status != "done" else "draw" if m.winner_id is None else "win" if m.winner_id == player_id else "loss"
             detail = json.loads(m.detail) if m.detail else {}
             output.append({"id": m.id, "opponent": opponent.name if opponent else "Đội đối thủ", "kind": m.kind,
                            "event_day": m.event_day, "status": m.status, "result": result, "points": pts,
