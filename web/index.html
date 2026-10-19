@@ -11,6 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/app.css?v=9">
   <link rel="stylesheet" href="/assets/status.css?v=4">
+  <link rel="stylesheet" href="/assets/tournament.css?v=6">
 </head>
 <body>
   <header class="topbar">
@@ -61,18 +62,30 @@
       <div class="wrap">
         <div class="section-heading"><div><div class="eyebrow">KHU VỰC THÍ SINH</div><h2>Đăng ký và thi đấu</h2></div><p>Tạo tài khoản đội để nộp bot. Sau khi đăng nhập, bạn có thể xem trạng thái các lần nộp và lịch sử trận.</p></div>
         <div class="contest-grid">
+        <article id="tournamentPanel" class="panel">
+          <label>Giải hiện tại và lịch sử<select id="tournamentSelect" aria-label="Chọn giải"></select></label>
+          <div id="tournamentSummary" aria-live="polite">Đang tải giải…</div>
+          <button id="joinTournament" class="button button-blue hidden" type="button">Tham gia giải</button>
+          <p id="tournamentTeam" aria-live="polite"></p>
+          <div id="tournamentGroups" class="tournament-grid"></div>
+          <div id="tournamentBracket"></div>
+          <h3>Lịch và kết quả encounter</h3><p>Một encounter gồm nhiều ván. Replay riêng cho từng ván. Kết quả tạm phải hết hạn khiếu nại mới được chốt.</p>
+          <div id="tournamentEncounters"></div><details id="tournamentDraws"></details>
+        </article>
           <article class="panel submit-panel">
             <div class="panel-title"><div><div class="eyebrow">BOT SUBMISSION</div><h3>Nộp bài dự thi</h3></div><span class="file-badge">C++17 · Python 3</span></div>
-            <p class="muted">Muốn thi trong ngày, đội phải nộp một bot mới trong ngày đó (giờ Việt Nam). Mỗi đội chỉ được nộp một lần; bot hôm trước không được ghép tiếp.</p>
+            <p class="muted">Tham gia Tournament trước khi đăng ký bị khóa. Mỗi đội tối đa 3 lần nộp mỗi vòng, kể cả bài lỗi. Bot ready mới nhất được khóa sau hạn; nếu không có, kế thừa bot Tournament tương thích của vòng trước.</p>
             <div id="submitGuestHint" class="empty-state">Đăng nhập hoặc đăng ký đội để nộp bot. <button id="submitLoginLink" class="text-button" type="button">Mở tài khoản →</button></div>
             <form id="submitForm">
               <label>Ngôn ngữ<select name="language"><option value="python">Python 3</option><option value="cpp">C++17</option></select></label>
-              <label>Mã nguồn bot<textarea name="source" required spellcheck="false" placeholder="Dán mã nguồn bot OTTv2 của đội tại đây…"></textarea></label>
+              <p id="submitCodeHelp" class="muted"></p>
+              <label>Mã nguồn bot<textarea name="source" required spellcheck="false" aria-describedby="submitCodeHelp" placeholder="Viết thuật toán trong hàm mẫu…"></textarea></label>
               <div class="submit-tools"><span>Giới hạn 100 KB</span></div>
-              <button class="button button-blue full" type="submit">Nộp mã nguồn <span>↑</span></button>
+              <div id="submitButtonHelp" title="Đang kiểm tra điều kiện nộp bot." tabindex="0" aria-describedby="submitBlockedReason"><button class="button button-blue full" type="submit" disabled title="Đang kiểm tra điều kiện nộp bot." aria-describedby="submitBlockedReason">Nộp mã nguồn <span>↑</span></button></div>
+              <p id="submitBlockedReason" class="action-blocked" role="status" aria-live="polite">Đang kiểm tra điều kiện nộp bot.</p>
               <div class="form-message" aria-live="polite"></div>
             </form>
-            <div class="protocol-note"><span>?</span><p>Bot đọc từng dòng JSON từ <code>stdin</code> và trả một nước đi <code>{"piece_id":"S01","to":"a4"}</code> trên <code>stdout</code>. <button class="inline-link link-button" type="button" data-open-rules>Xem luật và giao thức.</button></p></div>
+            <div class="protocol-note"><span>?</span><p>Viết hàm chọn nước đi trong mã mẫu. Hệ thống cung cấp trạng thái bàn cờ và xử lý JSON, input/output. <button class="inline-link link-button" type="button" data-open-rules>Xem kiểu dữ liệu và mã mẫu.</button></p></div>
           </article>
         </div>
       </div>
@@ -93,14 +106,12 @@
   <footer class="footer"><div class="wrap footer-inner"><span>Oẳn Tù Tì chiến thuật · Thi đấu bằng lập trình</span><a href="/admin">Ban tổ chức</a><a href="#top">Về đầu trang ↑</a></div></footer>
   <dialog id="leaderboardDialog" class="leaderboard-dialog" aria-labelledby="leaderboardTitle">
     <div class="dialog-heading"><div><div class="eyebrow">OTTv2 · KẾT QUẢ THI ĐẤU</div><h2 id="leaderboardTitle">Bảng xếp hạng</h2></div><button id="closeLeaderboard" class="dialog-close" type="button" aria-label="Đóng bảng xếp hạng">×</button></div>
-    <p class="leaderboard-intro">Thắng 1 điểm · hòa 0,5 điểm · thua 0 điểm. Bảng chỉ tính các trận đã hoàn tất.</p>
-    <div class="leaderboard-filters" role="group" aria-label="Khoảng thời gian xếp hạng">
-      <button id="leaderboardSeason" class="leaderboard-filter active" type="button" aria-pressed="true">Toàn mùa</button>
-      <button id="leaderboardDaily" class="leaderboard-filter" type="button" aria-pressed="false">Theo ngày</button>
-      <label id="leaderboardDayWrap" class="leaderboard-day hidden">Ngày ghép trận <input id="leaderboardDay" type="date"></label>
+    <p class="leaderboard-intro">Chọn giải để xem đội và kết quả riêng của giải đó. Elo trong mỗi giải bắt đầu từ 1000, hệ số điều chỉnh 32; BYE và kết quả hành chính không tính Elo.</p>
+    <div class="leaderboard-filters" role="group" aria-label="Giải đấu xếp hạng">
+      <label class="leaderboard-tournament">Tournament<select id="leaderboardTournament" aria-label="Giải đấu xếp hạng"><option value="">Đang tải giải…</option></select></label>
     </div>
-    <p id="leaderboardPeriod" class="leaderboard-period">Tổng điểm từ đầu cuộc thi.</p>
-    <div class="panel table-panel leaderboard-panel"><div class="table-scroll"><table><thead><tr><th>Hạng</th><th>Đội</th><th>Số trận</th><th>Trận thắng</th><th>Điểm</th></tr></thead><tbody id="leaderboardBody"></tbody></table></div><div id="leaderboardEmpty" class="table-empty hidden">Bảng xếp hạng chưa có dữ liệu.</div></div>
+    <p id="leaderboardPeriod" class="leaderboard-period">Elo từ các encounter hợp lệ trong giải đang chọn.</p>
+    <div class="panel table-panel leaderboard-panel"><div class="table-scroll"><table><thead><tr><th>Hạng</th><th>Đội</th><th>Số trận</th><th>Trận thắng</th><th>Elo</th></tr></thead><tbody id="leaderboardBody"></tbody></table></div><div id="leaderboardEmpty" class="table-empty hidden">Bảng xếp hạng chưa có dữ liệu.</div></div>
   </dialog>
   <dialog id="replayDialog" class="replay-dialog" aria-labelledby="replayTitle">
     <div class="dialog-heading"><div><div class="eyebrow">OTTv2 · PHÁT LẠI TRẬN ĐẤU</div><h2 id="replayTitle">Xem bot thi đấu</h2></div><button id="closeReplay" class="dialog-close" type="button" aria-label="Đóng phát lại">×</button></div>
@@ -121,15 +132,30 @@
     <h3 class="rules-section-title">Đội đăng ký và nộp bài như thế nào?</h3>
     <div class="rule-grid">
       <article class="rule-card"><span class="rule-number">01</span><div class="rule-symbol">♙</div><h3>Tạo tài khoản đội</h3><p>Chọn “Đăng ký”, nhập tên đội và mật khẩu. Không cần mã cuộc thi. Tài khoản dùng để nộp bot và theo dõi kết quả.</p></article>
-      <article class="rule-card"><span class="rule-number">02</span><div class="rule-symbol">&lt;/&gt;</div><h3>Viết bot bằng C++17 hoặc Python 3</h3><p>Bot nhận trạng thái bàn cờ và danh sách nước đi hợp lệ qua <code>stdin</code>. Hãy chọn một nước trong danh sách đó.</p></article>
-      <article class="rule-card"><span class="rule-number">03</span><div class="rule-symbol">↑</div><h3>Dán và nộp mã nguồn</h3><p>Đăng nhập, chọn ngôn ngữ, dán mã nguồn bot và bấm “Nộp mã nguồn”. Muốn thi hôm nay, đội phải nộp bot hôm nay theo giờ Việt Nam. Chỉ nộp một lần mỗi ngày, kể cả khi biên dịch lỗi; bot cũ hết hạn khi sang ngày. Đội nộp sau lượt ghép đầu vẫn có thể được ghép nếu lịch còn mở và có thêm đối thủ hợp lệ. Giới hạn 100 KB.</p></article>
-      <article class="rule-card"><span class="rule-number">04</span><div class="rule-symbol">{ }</div><h3>Định dạng bot phải trả về</h3><p>In đúng một dòng JSON cho mỗi lượt, gồm mã quân và ô đến; ví dụ <code>{"piece_id":"S01","to":"a4"}</code>. In kết quả ra <code>stdout</code> và flush; không in lời giải thích vào đó.</p></article>
-      <article class="rule-card rule-protocol"><span class="rule-number">05</span><div class="rule-symbol">◷</div><h3>Kiểm tra trạng thái và thi đấu</h3><p>Theo dõi trạng thái bài nộp trong “Lịch sử nộp bài”. Chỉ bot sẵn sàng mới được ghép đấu; trận tự chạy khi ban tổ chức mở lịch. Bot trả sai định dạng, nước không hợp lệ hoặc quá 1,5 giây một lượt sẽ bị xử thua trận.</p></article>
+      <article class="rule-card"><span class="rule-number">02</span><div class="rule-symbol">&lt;/&gt;</div><h3>Viết bot bằng C++17 hoặc Python 3</h3><p>Sửa hàm trong mã mẫu: C++ dùng <code>Move chooseMove(const BoardState&amp; state)</code>, Python dùng <code>choose_move(state)</code>. Trạng thái bàn cờ và nước hợp lệ có sẵn; hệ thống xử lý input/output.</p></article>
+      <article class="rule-card"><span class="rule-number">03</span><div class="rule-symbol">↑</div><h3>Dán và nộp mã nguồn</h3><p>Đăng nhập, chọn ngôn ngữ, dán mã nguồn bot và bấm “Nộp mã nguồn”. Tham gia giải trong cửa sổ đăng ký. Mỗi vòng Tournament có tối đa 3 lần nộp, kể cả bài lỗi. Bài ready mới nhất được chọn sau hạn đóng; nếu không có thì kế thừa bot Tournament tương thích. Vòng bảng và phân hạng dùng chung bot khóa. Giới hạn 100 KB.</p></article>
+      <article class="rule-card"><span class="rule-number">04</span><div class="rule-symbol">{ }</div><h3>Giá trị hàm trả về</h3><p>C++ trả về một <code>Move</code> trong <code>state.legal_moves</code>; Python trả về một dict trong <code>state["legal_moves"]</code> hoặc dict chỉ có <code>piece_id</code>, <code>to</code>. Không viết <code>main()</code>, không tự đọc input hoặc in kết quả.</p></article>
+      <article class="rule-card rule-protocol"><span class="rule-number">05</span><div class="rule-symbol">◷</div><h3>Kiểm tra trạng thái và thi đấu</h3><p>Theo dõi trạng thái bài nộp trong “Lịch sử nộp bài”. Chỉ bot sẵn sàng mới được ghép đấu; encounter chạy theo lượt do ban tổ chức xác nhận. Bot trả sai định dạng, nước không hợp lệ hoặc quá 1,5 giây một lượt sẽ bị xử thua ván.</p></article>
     </div>
+    <h3 class="rules-section-title">Mã mẫu và trạng thái bàn cờ</h3>
+    <details><summary>C++17: hàm và kiểu dữ liệu có sẵn</summary><pre class="bot-template-code"><code>// API: chooseMove(const BoardState&amp; state) returns Move.
+// state.pieces, state.legal_moves, state.at(x, y).
+// state.board[y][x]: optional&lt;Piece&gt;; coordinates 0..8.
+// No main() or input/output code.
+Move chooseMove(const BoardState&amp; state) {
+    // Thay bằng thuật toán của bạn.
+    return state.legal_moves.front();
+}</code></pre><p><code>state.side</code>: phe của bot; <code>state.move_number</code>: số nước; <code>state.pieces</code>: toàn bộ quân còn sống. <code>state.at(x, y)</code> trả về <code>const Piece*</code> hoặc <code>nullptr</code>. <code>state.board[y][x]</code> là <code>std::optional&lt;Piece&gt;</code>. Tọa độ từ 0 đến 8.</p><p><code>Piece</code>: <code>id, side, type, x, y</code>. <code>Move</code>: <code>piece_id, from, to, capture</code>; <code>capture</code> là <code>std::optional&lt;std::string&gt;</code>. Không cần tự khai báo các kiểu này.</p></details>
+    <details><summary>Python 3: hàm và trạng thái dạng dict</summary><pre class="bot-template-code"><code># API: choose_move(state) returns a legal move dict.
+# state: side, move_number, board_size, pieces, legal_moves.
+# Piece coordinates: 0..8. Judge handles input/output.
+def choose_move(state):
+    # Thay bằng thuật toán của bạn.
+    return state["legal_moves"][0]</code></pre><p>Đọc bàn cờ qua <code>state["pieces"]</code>, phe qua <code>state["side"]</code> và nước hợp lệ qua <code>state["legal_moves"]</code>. Mỗi lượt gọi hàm một lần. Có thể thêm hàm phụ và import thư viện chuẩn.</p></details>
     <h3 class="rules-section-title game-rules-title">Tóm tắt luật trong một trận OTTv2</h3>
     <div class="rule-grid game-rule-grid">
       <article class="rule-card"><span class="rule-number">A</span><div class="rule-symbol">↗</div><h3>Di chuyển và ăn quân</h3><p>Bàn cờ 9×9. Mỗi lượt đi một ô theo một trong tám hướng; Xanh đi trước. Đấm thắng Kéo, Kéo thắng Lá, Lá thắng Đấm. Quân cùng loại hoặc không khắc chế được sẽ chặn ô.</p></article>
-      <article class="rule-card"><span class="rule-number">B</span><div class="rule-symbol">◎</div><h3>Thắng, hòa và xếp hạng</h3><p>Thắng khi ăn hết một loại quân đối thủ hoặc đưa quân tới đích (Bắc: a1, Nam: i9). Lặp thế cờ ba lần hoặc đủ 200 nước chưa phân thắng bại thì hòa. Bảng xếp hạng tính 1 điểm thắng, 0,5 điểm hòa, 0 điểm thua.</p></article>
+      <article class="rule-card"><span class="rule-number">B</span><div class="rule-symbol">◎</div><h3>Thắng, hòa và xếp hạng</h3><p>Thắng khi ăn hết một loại quân đối thủ hoặc đưa quân tới đích (Bắc: a1, Nam: i9). Lặp thế cờ ba lần hoặc đủ 200 nước chưa phân thắng bại thì hòa. Điểm ván: thắng 1, hòa 0,5, thua 0. Vòng bảng: mỗi encounter 2 ván; điểm trận thắng 3, hòa 1, thua 0. Knockout: 6 ván chính, tối đa 4 ván phụ.</p></article>
     </div>
   </dialog>
   <dialog id="accountDialog" class="account-dialog">
@@ -153,6 +179,8 @@
     </div>
     <div id="signedIn" class="signed-in hidden"><div class="signed-avatar">♟</div><div class="signed-copy"><span class="eyebrow">ĐỘI ĐANG ĐĂNG NHẬP</span><h3 id="teamName">—</h3><button id="logoutBtn" class="text-button" type="button">Đăng xuất</button></div></div>
   </dialog>
-  <script src="/assets/app.js?v=11" defer></script>
+  <script src="/assets/app.js?v=14" defer></script>
+  <script src="/assets/tournament-rounds.js?v=1" defer></script>
+  <script src="/assets/tournament.js?v=7" defer></script>
 </body>
 </html>

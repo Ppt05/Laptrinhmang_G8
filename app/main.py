@@ -13,12 +13,15 @@ from .models import EventControl, Job, Match, Player, Submission, WorkerNode
 from .event_schedule import as_vietnam_time, get_event_state, submission_day_bounds
 from .security import authorized_player, check_registration, digest, hash_password, new_token, verify_password
 from .schema import ensure_schema
+from . import tournament
+from .tournament_api import router as tournament_router
 
 app = FastAPI(title="OanTuTi Bot League", version="0.2.0", description="OTTv2: game chiến thuật bàn cờ 9×9",
               docs_url=None, redoc_url=None, openapi_url=None)
 VN = ZoneInfo(os.getenv("EVENT_TIMEZONE", "Asia/Ho_Chi_Minh"))
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 app.mount("/assets", StaticFiles(directory=WEB_DIR), name="assets")
+app.include_router(tournament_router)
 
 @app.on_event("startup")
 def startup():
@@ -31,7 +34,7 @@ class Submit(BaseModel): language: str; source: str = Field(min_length=1)
 class Challenge(BaseModel): opponent_id: int
 class EventScheduleInput(BaseModel): start_at: datetime; end_at: datetime; enabled: bool
 class AdminLogin(BaseModel): username: str = Field(min_length=1, max_length=80); password: str = Field(min_length=1, max_length=256)
-class VoidMatchInput(BaseModel): reason: str = Field(min_length=8, max_length=500)
+class VoidMatchInput(BaseModel): reason: str = Field(default="", max_length=500)
 
 def mark_match_void(match: Match, reason: str):
     detail = json.loads(match.detail) if match.detail else {}
@@ -100,7 +103,10 @@ def admin_page():
 @app.get("/api/meta")
 def meta():
     with SessionLocal() as db:
+        active = db.scalar(select(tournament.Tournament).where(tournament.Tournament.status.not_in(["complete", "cancelled"])))
         return {"name": "OanTuTi Bot League", "protocol_version": 2,
+                "modes": {"tournament": True, "daily": False, "challenge": False, "practice": False},
+                "tournament": {"id": active.id, "status": active.status} if active else None,
                 **get_event_state(db, matches_engine_enabled())}
 
 @app.get("/api/admin/event")
@@ -164,13 +170,13 @@ def admin_matches(x_admin_key: str | None = Header(default=None), authorization:
 def admin_void_and_replay(match_id: int, body: VoidMatchInput,
                           x_admin_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
     require_admin(x_admin_key, authorization)
-    if len(body.reason.strip()) < 8:
-        raise HTTPException(400, "Lý do hủy trận phải có ít nhất 8 ký tự")
     with SessionLocal.begin() as db:
         db.execute(text("SELECT pg_advisory_xact_lock(74620146)"))
         m = db.scalar(select(Match).where(Match.id == match_id).with_for_update())
         if not m:
             raise HTTPException(404, "Không tìm thấy trận")
+        if m.encounter_id:
+            raise HTTPException(409, "Dùng điều khiển Tournament để xử lý ván của giải")
         if m.status not in ("done", "failed"):
             raise HTTPException(409, "Chỉ có thể hủy trận đã kết thúc hoặc bị lỗi")
         if db.scalar(select(Match.id).where(Match.replay_of == match_id)):
@@ -200,12 +206,12 @@ def admin_void_and_replay(match_id: int, body: VoidMatchInput,
 def admin_void_match(match_id: int, body: VoidMatchInput,
                      x_admin_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
     require_admin(x_admin_key, authorization)
-    if len(body.reason.strip()) < 8:
-        raise HTTPException(400, "Lý do hủy trận phải có ít nhất 8 ký tự")
     with SessionLocal.begin() as db:
         m = db.scalar(select(Match).where(Match.id == match_id).with_for_update())
         if not m:
             raise HTTPException(404, "Không tìm thấy trận")
+        if m.encounter_id:
+            raise HTTPException(409, "Dùng điều khiển Tournament để xử lý ván của giải")
         if m.status not in ("done", "failed"):
             raise HTTPException(409, "Chỉ có thể hủy trận đã kết thúc hoặc bị lỗi")
         if db.scalar(select(Match.id).where(Match.replay_of == match_id)):
@@ -263,30 +269,19 @@ def me(player_id: int = Depends(authorized_player)):
         return {"player_id": p.id, "name": p.name}
 
 @app.post("/api/submissions")
-def submit(body: Submit, player_id: int = Depends(authorized_player)):
-    lang = body.language.lower()
-    if lang not in ("cpp", "python"): raise HTTPException(400, "language phải là cpp hoặc python")
-    if len(body.source.encode("utf-8")) > int(os.getenv("MAX_SOURCE_BYTES", "100000")): raise HTTPException(413, "Mã nguồn vượt giới hạn 100 KB")
+def submit(body: Submit, player_id: int = Depends(authorized_player), idempotency_key: str | None = Header(default=None)):
+    received = tournament.utcnow()
     with SessionLocal.begin() as db:
-        db.execute(text("SELECT pg_advisory_xact_lock(74620146)"))
-        # Lock the team row so concurrent requests cannot both pass the daily quota.
-        db.scalar(select(Player).where(Player.id == player_id).with_for_update())
-        local_day = datetime.now(VN).date()
-        day_start, day_end = submission_day_bounds(local_day)
-        control = db.get(EventControl, 1)
-        if control and control.enabled and control.end_at and datetime.now(VN) >= as_vietnam_time(datetime.fromisoformat(control.end_at)):
-            raise HTTPException(409, "Lịch thi đã kết thúc; không thể nộp bot sau giờ đóng")
-        already_submitted = db.scalar(select(Submission.id).where(
-            Submission.player_id == player_id,
-            Submission.created_at >= day_start,
-            Submission.created_at < day_end))
-        if already_submitted:
-            raise HTTPException(429, "Mỗi đội chỉ được nộp một phiên bản mã nguồn mỗi ngày (giờ Việt Nam)")
-        if match_for_teams_on_day(db, (player_id,), local_day.isoformat()):
-            raise HTTPException(409, "Đội đã có trận hôm nay; hãy nộp bot mới vào ngày mai")
-        s = Submission(player_id=player_id, language=lang, source=body.source); db.add(s); db.flush()
-        db.add(Job(kind="compile", payload=json.dumps({"submission_id": s.id})))
-        return {"submission_id": s.id, "status": "queued"}
+        tournament.serialize(db)
+        t = db.scalar(select(tournament.Tournament).where(tournament.Tournament.status.not_in(["complete", "cancelled"])))
+        if not t:
+            raise HTTPException(409, "Chưa mở giải Tournament")
+        r = db.scalar(select(tournament.TournamentRound).where(tournament.TournamentRound.tournament_id == t.id)
+                      .order_by(tournament.TournamentRound.level.desc()).limit(1))
+        if not r:
+            raise HTTPException(409, "Chưa mở vòng nộp bot")
+        entry = tournament.submit(db, t, r, player_id, body.language, body.source, idempotency_key, received)
+        return {"submission_id": entry.submission_id, "status": "queued"}
 
 @app.get("/api/submissions")
 def submissions(player_id: int = Depends(authorized_player)):
@@ -317,27 +312,7 @@ def my_matches(player_id: int = Depends(authorized_player)):
 
 @app.post("/api/challenges")
 def challenge(body: Challenge, player_id: int = Depends(authorized_player)):
-    with SessionLocal() as db:
-        state = get_event_state(db, matches_engine_enabled())
-    if not state["matches_enabled"]:
-        if state["window_active"] and not state["worker_enabled"]:
-            raise HTTPException(503, "Đã đến lịch thi đấu nhưng máy chủ chạy bot chưa được cấu hình")
-        raise HTTPException(400, "Hiện không nằm trong khung giờ thi đấu")
-    if body.opponent_id == player_id: raise HTTPException(400, "Không thể thách đấu chính mình")
-    with SessionLocal.begin() as db:
-        db.execute(text("SELECT pg_advisory_xact_lock(74620146)"))
-        participants = sorted((player_id, body.opponent_id))
-        db.scalars(select(Player).where(Player.id.in_(participants)).order_by(Player.id).with_for_update()).all()
-        today = datetime.now(VN).date()
-        a, b = latest_ready(db, player_id, today), latest_ready(db, body.opponent_id, today)
-        if not a or not b: raise HTTPException(409, "Cả hai đội cần nộp bot hợp lệ trong hôm nay (giờ Việt Nam)")
-        active = db.scalar(select(Match.id).where(Match.status.in_(["queued", "running"]), (Match.player_a.in_(participants)) | (Match.player_b.in_(participants))))
-        if active: raise HTTPException(409, "Bạn đã có một trận đang chờ hoặc đang chạy")
-        if match_for_teams_on_day(db, participants, today.isoformat()):
-            raise HTTPException(409, "Mỗi đội chỉ được đấu một trận tính điểm trong ngày")
-        m = Match(player_a=player_id, player_b=body.opponent_id, submission_a=a.id, submission_b=b.id, event_day=today.isoformat(), kind="challenge")
-        db.add(m); db.flush(); db.add(Job(kind="match", payload=json.dumps({"match_id": m.id})))
-        return {"match_id": m.id, "status": "queued"}
+    raise HTTPException(409, "Challenge đang tắt; chỉ triển khai Tournament")
 
 @app.get("/api/replays")
 def replays(offset: int = 0, limit: int = 30):
@@ -371,26 +346,9 @@ def get_match(match_id: int):
                 "detail": json.loads(m.detail) if m.detail else None}
 
 @app.get("/api/leaderboard")
-def leaderboard(day: str | None = None):
-    if day:
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
-            raise HTTPException(400, "Ngày phải có định dạng YYYY-MM-DD")
-        try:
-            date.fromisoformat(day)
-        except ValueError:
-            raise HTTPException(400, "Ngày phải có định dạng YYYY-MM-DD")
+def leaderboard(tournament_id: int | None = None, day: str | None = None):
     with SessionLocal() as db:
-        players = db.scalars(select(Player).order_by(Player.id)).all()
-        rows = []
-        for p in players:
-            query = select(Match).where(Match.status == "done", (Match.player_a == p.id) | (Match.player_b == p.id))
-            if day:
-                query = query.where(Match.event_day == day)
-            matches = db.scalars(query).all()
-            if day and not matches:
-                continue
-            pts = sum(m.points_a if m.player_a == p.id else m.points_b for m in matches)
-            wins = sum(m.winner_id == p.id for m in matches)
-            rows.append({"player_id": p.id, "name": p.name, "points": pts, "wins": wins, "matches": len(matches)})
-        return sorted(rows, key=lambda x: (-x["points"], -x["wins"], x["player_id"]))
+        selected=(tournament.get_tournament(db,tournament_id) if tournament_id is not None else
+                  db.scalar(select(tournament.Tournament).order_by(tournament.Tournament.id.desc()).limit(1)))
+        return tournament.tournament_leaderboard(db,selected) if selected else []
 

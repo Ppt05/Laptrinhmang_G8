@@ -9,7 +9,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/app.css?v=7">
-  <link rel="stylesheet" href="/assets/admin.css?v=6">
+  <link rel="stylesheet" href="/assets/admin.css?v=10">
+  <link rel="stylesheet" href="/assets/tournament.css?v=3">
 </head>
 <body class="admin-page">
   <header class="topbar">
@@ -19,7 +20,7 @@
   <main class="admin-wrap">
     <div class="eyebrow">KHU VỰC BAN TỔ CHỨC</div>
     <h1>Quản lý thi đấu</h1>
-    <p class="admin-lead">Ban tổ chức đặt giờ mở và đóng thi đấu. Khi đến giờ, hệ thống tự ghép ngẫu nhiên các đội đã nộp bot hợp lệ trong ngày theo giờ Việt Nam; worker nào rảnh sẽ nhận trận.</p>
+    <p class="admin-lead">Điều hành Tournament theo GAMERULE.md: đăng ký, khóa bảng, cửa sổ bot, từng lượt thi, khiếu nại và chốt suất đi tiếp. Daily và Challenge đang tắt.</p>
     <section id="adminLoginPanel" class="panel admin-panel admin-login-panel">
       <h2>Đăng nhập ban tổ chức</h2>
       <p class="muted">Tài khoản mặc định tên <code>admin</code>. Mật khẩu được lưu riêng trong cấu hình môi trường của Render.</p>
@@ -31,35 +32,95 @@
       </form>
     </section>
     <section id="adminControls" class="hidden">
-    <section class="panel admin-panel">
-      <div class="admin-status-row"><div><div class="eyebrow">TRẠNG THÁI HIỆN TẠI</div><h2 id="eventState">Chưa tải trạng thái</h2></div><span id="stateBadge" class="state-badge">—</span></div>
-      <p id="workerNote" class="worker-note">Đăng nhập để tải lịch và danh sách máy worker.</p>
-      <form id="adminForm">
-        <div class="admin-signed-in"><span>Đã đăng nhập ban tổ chức</span><button id="adminLogout" class="text-button" type="button">Đăng xuất</button></div>
-        <button class="button button-navy" id="loadSchedule" type="button">Tải lịch đã lưu</button>
-        <div class="date-grid">
-          <label>Bắt đầu (giờ Việt Nam)<input id="startAt" type="datetime-local" required></label>
-          <label>Kết thúc (giờ Việt Nam)<input id="endAt" type="datetime-local" required></label>
-        </div>
-        <div class="admin-actions">
-          <button class="button button-blue" type="submit" data-enabled="true">Lưu lịch và mở theo giờ</button>
-          <button class="button button-outline" type="button" id="closeEvent">Đóng thi đấu</button>
-        </div>
-        <p id="adminMessage" class="admin-message" aria-live="polite"></p>
-      </form>
-    </section>
-    <section class="panel admin-panel assignment-panel">
-      <div class="eyebrow">THEO DÕI TRẬN ĐẤU</div>
-      <h2>Trận được ghép tự động</h2>
-      <p class="muted">Trong khung giờ mở, hệ thống chỉ ghép đội có bài nộp trong ngày và đã biên dịch thành công. Đội lẻ chờ đội mới nộp trong ngày; mỗi đội đấu tối đa một trận tính điểm mỗi ngày. Các worker cùng lấy trận từ hàng chờ.</p>
-      <div class="admin-actions"><button class="button button-outline" id="refreshAssignments" type="button">Tải lại kết quả</button></div>
-      <p id="assignMessage" class="admin-message" aria-live="polite"></p>
-      <h3>Trận gần đây</h3>
-      <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Mã</th><th>Hai đội</th><th>Máy đã nhận</th><th>Trạng thái</th><th>Kết quả</th><th>Lỗi hạ tầng</th></tr></thead><tbody id="assignedMatches"></tbody></table></div>
-    </section>
-    <aside class="admin-help"><strong>Lưu ý về worker</strong><p>Website và database chạy trên Render; worker chạy trên máy của ban tổ chức. Các máy cùng đọc hàng chờ PostgreSQL. Nếu một máy tắt, máy còn lại tiếp tục nhận các trận chưa bắt đầu và khôi phục trận bị gián đoạn.</p></aside>
+      <div class="admin-signed-in"><button id="adminRefresh" class="button button-outline" type="button">Tải lại</button><button id="adminLogout" class="text-button" type="button">Đăng xuất</button></div>
+      <p id="adminMessage" class="admin-message" aria-live="polite"></p>
+      <p id="workersState" class="admin-worker-status" role="status" aria-live="polite"></p>
+      <div class="admin-columns">
+      <div class="admin-column">
+      <section class="panel admin-panel">
+        <h2>Cấu hình giải</h2>
+        <label>Giải hiện tại / lịch sử<select id="adminTournament"></select></label>
+        <p id="adminState"></p>
+        <form id="tournamentConfig">
+          <label>Tên giải (tùy chọn)<input name="name" maxlength="120" value="OTTv2 Tournament"></label>
+          <p class="muted">Thiết lập vòng bảng: chỉ dùng để chia bảng và chọn đội vào nhánh knockout. Từ knockout, mỗi cặp có hai đội; đội thắng đi tiếp, đội thắng chung kết vô địch. Không chia bảng lại ở bán kết hoặc chung kết.</p>
+          <div class="date-grid"><label>Vòng bảng: số đội tối đa mỗi bảng<input name="max_group_size" type="number" min="1" value="4" required></label><label>Vòng bảng: số đội đi tiếp mỗi bảng<input name="qualifiers" type="number" min="1" value="2" required></label></div>
+          <div class="date-grid"><label>Mở đăng ký (UTC+7)<input name="registration_open" type="datetime-local" required></label><label>Đóng đăng ký (UTC+7)<input name="registration_close" type="datetime-local" required></label></div>
+          <label>Kênh khiếu nại chính thức (tùy chọn)<input name="appeal_contact" maxlength="500" placeholder="Email hoặc kênh liên hệ BTC"></label>
+          <label>Hạn xử lý hạ tầng và lịch hoãn (tùy chọn)<textarea name="incident_policy" maxlength="2000" placeholder="Ví dụ: xử lý trong 24 giờ; quá hạn công bố lịch hoãn."></textarea></label>
+          <label class="automation-toggle"><input name="auto_run" type="checkbox" checked>Tự động điều hành khi đến hạn</label>
+          <label>Cửa sổ nộp bot cho vòng tự tạo (phút)<input name="auto_submission_minutes" type="number" min="1" max="525600" value="1440" required></label>
+          <p class="muted">Tự khóa đăng ký, xác nhận bảng/nhánh, khóa bot và chạy lượt. Vòng bảng chờ hạn khiếu nại; loại trực tiếp thi liên tục và chốt ngay khi không có hold. Chỉ mở nộp vòng kế tiếp khi đủ suất đi tiếp. Giữ giờ đã lưu; vòng mới chưa có lịch sẽ mở ngay trong thời lượng trên. Hold, lỗi hạ tầng và bài đang kiểm tra vẫn chặn tiến trình.</p>
+          <button id="saveAutomation" class="button button-outline" type="button" disabled>Lưu chế độ tự động</button>
+          <p id="automationState" class="muted" role="status" aria-live="polite"></p>
+          <div class="admin-actions"><button class="button button-blue" type="submit">Tạo giải mới</button><button id="saveConfiguration" class="button button-outline" type="button">Lưu cấu hình giải đang chọn</button></div>
+        </form>
+        <p class="muted">Công bố image sandbox cố định bằng digest trong cấu hình máy chủ trước khi tạo giải. Thiết lập vòng bảng được kiểm tra theo số đội tham gia và khóa khi khóa đăng ký. Mỗi vòng loại trực tiếp có cửa sổ nộp bot riêng trong phần Điều hành vòng thi.</p>
+        <div class="admin-actions" id="tournamentActions">
+          <button class="button button-navy" data-action="lock-roster" type="button">Khóa đăng ký / chia bảng</button>
+          <button class="button button-navy" data-action="confirm-groups" type="button">Xác nhận bảng</button>
+          <button class="button button-navy" data-action="confirm-bracket" type="button">Xác nhận nhánh</button>
+        </div><p id="tournamentBlocked" class="action-blocked" role="status" aria-live="polite"></p>
+        <details><summary>Danh sách, chia bảng và nhánh</summary><div id="adminRoster"></div></details>
+        <form id="closeTournamentForm" class="close-tournament-form">
+          <label>Lý do đóng giải (tùy chọn)<input id="closeTournamentReason" maxlength="2000" disabled></label>
+          <button id="closeTournament" class="button button-outline close-tournament-button" type="submit" disabled>Đóng giải</button>
+          <p class="muted">Đóng sớm dừng nhận bài và hủy công việc chưa chạy để có thể tạo giải mới. Giữ lịch sử, kết quả đã thi và replay; không chọn vô địch. Nếu worker đang xử lý, đợi hoàn tất rồi đóng.</p>
+        </form>
+      </section>
+      <section class="panel admin-panel">
+        <h2>Điều hành vòng thi</h2>
+        <label>Vòng<select id="adminRound"></select></label><p id="roundState"></p>
+        <form id="windowForm"><div class="date-grid"><label>Mở nộp bot (UTC+7)<input id="windowOpen" type="datetime-local" required></label><label>Đóng nộp bot (UTC+7)<input id="windowClose" type="datetime-local" required></label></div><div class="admin-actions"><button class="button button-blue" type="submit">Mở cửa sổ nộp</button><button id="forceOpenWindow" class="button button-outline force-button hidden" type="button">Force mở nộp ngay</button></div></form>
+        <div class="admin-actions" id="roundActions">
+          <button class="button button-navy" data-round-action="lock-bots" type="button">Khóa bot</button>
+          <button class="button button-outline force-button hidden" data-force-round-action="lock-bots" type="button">Force khóa bot ngay</button>
+          <span id="nextBatch" class="muted" role="status" aria-live="polite"></span>
+          <button class="button button-navy" data-round-action="start-batch" type="button">Chạy lượt</button>
+          <button class="button button-outline" data-round-action="finalize-encounters" type="button">Chốt kết quả encounter</button>
+          <button class="button button-outline force-button hidden" data-force-round-action="finalize-encounters" type="button">Force chốt encounter</button>
+          <button class="button button-outline" data-round-action="qualify" type="button">Phân hạng / công bố đi tiếp</button>
+          <button class="button button-navy" data-round-action="finalize" type="button">Chốt vòng</button>
+          <button class="button button-outline force-button hidden" data-force-round-action="finalize" type="button">Force chốt vòng</button>
+        </div><p id="roundBlocked" class="action-blocked"></p>
+        <div id="adminEncounters"></div>
+      </section>
+      </div>
+      <div class="admin-column">
+      <div id="forceControls" class="panel admin-panel hidden">
+        <p class="muted">Force chỉ hiện khi mở nộp, khóa bot hoặc chốt kết quả đang bị chặn bởi thời hạn hoặc hold. Vẫn cần bài kiểm tra xong và kết quả thi đấu đầy đủ. Mọi lần force được ghi vào nhật ký.</p>
+        <label>Lý do force (tùy chọn)<input id="forceReason" maxlength="2000"></label>
+      </div>
+      <section class="panel admin-panel">
+        <h2>Đăng thông báo</h2>
+        <p>Thông báo hiển thị công khai trong giải đang chọn. Nội dung cập nhật luật chỉ là thông báo; không thay đổi luật hoặc kết quả đã khóa.</p>
+        <form id="noticeForm">
+          <label>Loại thông báo<select id="noticeKind"><option value="notice">Thông báo</option><option value="rules_update">Thông báo cập nhật luật</option></select></label>
+          <label>Nội dung<textarea id="noticeText" maxlength="4000" rows="4"></textarea></label>
+          <div class="admin-actions"><button id="publishNotice" class="button button-blue" type="submit" disabled>Đăng thông báo</button><button id="clearNotices" class="button button-outline" type="button" disabled>Gỡ tất cả thông báo</button></div>
+          <p id="noticeMessage" class="admin-message" aria-live="polite"></p>
+        </form>
+        <p class="muted">Gỡ thông báo chỉ ẩn nội dung công khai. Nhật ký, hold và các quyết định vẫn được giữ.</p>
+        <div id="adminNotices"></div>
+      </section>
+      <section class="panel admin-panel">
+        <h2>Sự cố, khiếu nại và kỷ luật</h2>
+        <p>Đội gửi khiếu nại qua kênh đã công bố. Ghi căn cứ và bằng chứng tại đây. Chỉ retry ván lỗi hạ tầng, bằng bot và môi trường đã khóa.</p>
+        <form id="exceptionForm">
+          <label>Quyết định<select name="kind"><option value="hold">Giữ kết quả / hoãn lịch</option><option value="decision">Giải quyết khiếu nại</option><option value="retry">Retry ván lỗi hạ tầng</option><option value="compile_retry">Retry kiểm tra lỗi hạ tầng</option><option value="forfeit">Bỏ cuộc encounter</option><option value="withdraw">Rút toàn giải</option><option value="disqualify">Truất quyền</option><option value="correct_game">Sửa kết quả ván đã xác minh</option><option value="cancel">Hủy vòng / giải</option></select></label>
+          <div class="date-grid"><label>ID encounter (nếu có)<input name="encounter_id" type="number" min="1"></label><label>ID ván / submission<input name="target_id" type="number" min="1"></label></div>
+          <div class="date-grid"><label>ID đội (nhiều đội bỏ cuộc: dấu phẩy)<input name="players" placeholder="1,2"></label><label>ID hold cần giải quyết<input name="action_id" type="number" min="1"></label></div>
+          <label>Lý do / quyết định (tùy chọn)<textarea name="reason"></textarea></label>
+          <label>Bằng chứng (tùy chọn)<textarea name="evidence"></textarea></label>
+          <div class="date-grid"><label>Điểm Nam khi sửa ván<select name="south_score"><option value="1">1 — Nam thắng</option><option value="0.5">0,5 — Hòa</option><option value="0">0 — Bắc thắng</option></select></label><label>Phạm vi hủy<select name="scope"><option value="round">Cả vòng</option><option value="tournament">Cả giải</option></select></label></div>
+          <button class="button button-navy" type="submit">Ghi quyết định</button>
+        </form><details><summary>Nhật ký và lần chạy</summary><pre id="adminAudit"></pre></details>
+      </section>
+      </div>
+      </div>
     </section>
   </main>
-  <script src="/assets/admin.js?v=8" defer></script>
+  <script src="/assets/tournament-rounds.js?v=1" defer></script>
+  <script src="/assets/admin.js?v=26" defer></script>
 </body>
 </html>
