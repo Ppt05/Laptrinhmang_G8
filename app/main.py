@@ -10,7 +10,7 @@ from pathlib import Path
 from .db import SessionLocal
 from .game_setup import new_game
 from .models import (EventControl, Job, Match, Player, Submission, WorkerNode,
-                     PracticeRequest, RoundSubmission)
+                     PracticeRequest, PracticeSubmissionRequest, RoundSubmission)
 from .event_schedule import as_vietnam_time, get_event_state, submission_day_bounds
 from .security import authorized_player, check_registration, digest, hash_password, new_token, verify_password
 from .schema import ensure_schema
@@ -112,8 +112,14 @@ def compatible_practice_submissions(db, player_id):
                               tournament.TournamentRound.environment)
                        .join(tournament.TournamentRound, RoundSubmission.round_id == tournament.TournamentRound.id)
                        .where(RoundSubmission.player_id == player_id)).all()
-    return {submission_id for submission_id, digest, environment in links
-            if digest == current_digest and json.loads(environment) == current_environment}
+    compatible = {submission_id for submission_id, digest, environment in links
+                  if digest == current_digest and json.loads(environment) == current_environment}
+    practice_submissions = db.scalars(select(PracticeSubmissionRequest).where(
+        PracticeSubmissionRequest.player_id == player_id,
+        PracticeSubmissionRequest.rules_digest == current_digest)).all()
+    compatible.update(request.submission_id for request in practice_submissions
+                      if json.loads(request.environment) == current_environment)
+    return compatible
 
 def make_admin_token(username: str) -> str:
     expires = int(time.time()) + 8 * 60 * 60
@@ -399,6 +405,43 @@ def retry_practice(match_id: int, player_id: int = Depends(authorized_player)):
         match.status, match.detail = "queued", None
         db.add(Job(kind="match", priority=200, payload=json.dumps({"match_id": match.id})))
         return {"match_id": match.id, "status": match.status}
+
+@app.post("/api/practice/submissions", status_code=202)
+def submit_practice_bot(body: Submit, player_id: int = Depends(authorized_player),
+                        idempotency_key: str | None = Header(default=None)):
+    language = body.language.lower()
+    if language not in ("python", "cpp"):
+        raise HTTPException(400, "language phải là cpp hoặc python")
+    try:
+        size = len(body.source.encode("utf-8"))
+    except UnicodeEncodeError:
+        raise HTTPException(400, "Mã nguồn phải là UTF-8")
+    if not 0 < size <= 100000 or "\x00" in body.source:
+        raise HTTPException(400, "Mã nguồn phải là UTF-8, tối đa 100000 byte")
+    if not idempotency_key or len(idempotency_key) > 128:
+        raise HTTPException(400, "Cần Idempotency-Key (tối đa 128 ký tự)")
+    rules = (Path(__file__).resolve().parents[1] / "GAMERULE.md").read_text(encoding="utf-8")
+    rules_digest = hashlib.sha256(rules.encode()).hexdigest()
+    environment = tournament.environment()
+    with SessionLocal.begin() as db:
+        db.execute(text("SELECT pg_advisory_xact_lock(74620200, :player_id)"), {"player_id": player_id})
+        previous = db.scalar(select(PracticeSubmissionRequest).where(
+            PracticeSubmissionRequest.player_id == player_id,
+            PracticeSubmissionRequest.idempotency_key == idempotency_key))
+        if previous:
+            submission = db.get(Submission, previous.submission_id)
+            if submission.language != language or submission.source != body.source:
+                raise HTTPException(409, "Idempotency-Key đã dùng cho nội dung khác")
+            return {"submission_id": submission.id, "status": submission.status}
+        submission = Submission(player_id=player_id, language=language, source=body.source)
+        db.add(submission)
+        db.flush()
+        db.add(PracticeSubmissionRequest(player_id=player_id, idempotency_key=idempotency_key,
+                                         submission_id=submission.id, rules_digest=rules_digest,
+                                         environment=tournament.dump(environment)))
+        db.add(Job(kind="compile", priority=100,
+                   payload=json.dumps({"submission_id": submission.id, "practice_validation": True})))
+        return {"submission_id": submission.id, "status": submission.status}
 
 @app.post("/api/submissions")
 def submit(body: Submit, player_id: int = Depends(authorized_player), idempotency_key: str | None = Header(default=None)):

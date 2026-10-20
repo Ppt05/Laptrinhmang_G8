@@ -5,6 +5,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY web ./web
+COPY examples ./examples
 COPY GAMERULE.md .
 RUN mkdir -p /app/data/artifacts && useradd --uid 10001 --create-home appuser && chown -R appuser:appuser /app/data
 USER appuser

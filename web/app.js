@@ -84,9 +84,48 @@ function paintSession() {
   $("#navAccount").classList.toggle("hidden", !signed);
   $("#dialogTitle").textContent = signed ? "Tài khoản đội" : "Đăng nhập";
   $("#practiceGuestHint").classList.toggle("hidden", signed);
+  $("#practiceCodeForm").classList.toggle("hidden", !signed);
   $("#practiceForm").classList.toggle("hidden", !signed);
   if (!signed) $("#practiceActive").classList.add("hidden");
 }
+
+const practiceCodeDrafts = new Map();
+let practiceCodeLanguage = $("#practiceCodeForm [name=language]").value;
+function paintPracticeCodeTemplate() {
+  const textarea = $("#practiceCodeForm [name=source]");
+  textarea.value = practiceCodeDrafts.has(practiceCodeLanguage)
+    ? practiceCodeDrafts.get(practiceCodeLanguage) : botTemplates[practiceCodeLanguage];
+}
+$("#practiceCodeForm [name=language]").addEventListener("change", event => {
+  practiceCodeDrafts.set(practiceCodeLanguage, $("#practiceCodeForm [name=source]").value);
+  practiceCodeLanguage = event.target.value;
+  paintPracticeCodeTemplate();
+});
+paintPracticeCodeTemplate();
+let pendingPracticeSubmission = null;
+$("#practiceCodeForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = $("#practiceCodeSubmit");
+  const data = Object.fromEntries(new FormData(form));
+  const encoded = JSON.stringify(data);
+  if (!pendingPracticeSubmission || pendingPracticeSubmission.body !== encoded)
+    pendingPracticeSubmission = {body: encoded, key: crypto.randomUUID()};
+  button.disabled = true;
+  message(form, "Đang gửi bot để kiểm tra…");
+  try {
+    const result = await request("/api/practice/submissions", {
+      method: "POST", headers: {"Idempotency-Key": pendingPracticeSubmission.key}, body: encoded,
+    });
+    pendingPracticeSubmission = null;
+    message(form, `Đã nhận bot Practice #${result.submission_id}; trạng thái: ${result.status}.`);
+    await Promise.all([refreshDashboard(), refreshPracticeState()]);
+  } catch (error) {
+    message(form, error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+});
 
 function setMode(mode) {
   const practice = mode === "practice";

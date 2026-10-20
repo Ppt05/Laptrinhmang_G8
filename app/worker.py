@@ -457,10 +457,12 @@ def process(job_id, instance_token):
                         JUDGE_ENV.reset(environment_token)
                         environment_token = None
                     environment_token = JUDGE_ENV.set(json.loads(db.get(TournamentRound, round_id).environment))
+                elif job.kind == "compile" and payload.get("practice_validation"):
+                    environment_token = JUDGE_ENV.set(tournament.environment())
                 if job.kind == "compile":
                     s = db.get(Submission, payload["submission_id"])
                     if s.status not in ("ready", "failed"):
-                        compile_submission(db, s, validate=bool(round_id))
+                        compile_submission(db, s, validate=bool(round_id) or bool(payload.get("practice_validation")))
                 elif job.kind == "match":
                     m = db.get(Match, payload["match_id"])
                     if m.status == "done" or m.status == "void":

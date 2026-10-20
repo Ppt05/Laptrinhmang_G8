@@ -133,6 +133,34 @@ class PracticeTests(unittest.TestCase):
             self.assertEqual(db.scalar(select(func.count(Match.id)).where(Match.kind == "practice")), 1)
             self.assertEqual(db.get(Match, accepted["match_id"]).status, "queued")
 
+    def test_practice_submission_is_available_without_an_open_tournament_and_idempotent(self):
+        from app.models import PracticeSubmissionRequest
+        source = 'def choose_move(state):\n return state["legal_moves"][0]\n'
+        body = self.main.Submit(language="python", source=source)
+        first = self.main.submit_practice_bot(body, self.team.id, "practice-bot-key")
+        second = self.main.submit_practice_bot(body, self.team.id, "practice-bot-key")
+        self.assertEqual(first, second)
+
+        with self.assertRaises(HTTPException) as changed:
+            self.main.submit_practice_bot(
+                self.main.Submit(language="python", source=source + "# changed\n"),
+                self.team.id, "practice-bot-key")
+        self.assertEqual(changed.exception.status_code, 409)
+
+        with self.Session.begin() as db:
+            db.query(Tournament).update({Tournament.status: "complete"})
+            submission = db.get(Submission, first["submission_id"])
+            submission.status = "ready"
+            record = db.scalar(select(PracticeSubmissionRequest).where(
+                PracticeSubmissionRequest.submission_id == submission.id))
+            self.assertIsNotNone(record)
+            job = db.scalar(select(Job).where(Job.kind == "compile"))
+            self.assertTrue(json.loads(job.payload)["practice_validation"])
+            self.assertGreater(job.priority, 0)
+
+        state = self.main.get_practice_state(self.team.id)
+        self.assertIn(first["submission_id"], {row["id"] for row in state["submissions"]})
+
     def test_daily_quota_counts_accepted_practice_matches(self):
         from app.main import VN
         today = datetime.now(VN).date().isoformat()

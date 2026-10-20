@@ -257,3 +257,12 @@ main,.footer{margin-left:var(--sidebar-width);transition:margin-left .22s ease}
 @media(prefers-reduced-motion:reduce){.hero-3d-cube{transition:none}.hero-3d-heading:hover .hero-3d-cube,.hero-3d-heading:focus-visible .hero-3d-cube{transform:translateZ(-.575em)}}
 
 .hero .eyebrow .fa-robot{font-size:14px}
+
+.practice-code-form{border:1px solid var(--line);border-radius:10px;background:#f8fbff;padding:18px;margin:18px 0}
+.practice-code-form h4{margin:0 0 6px;color:var(--navy);font-size:14px}
+.practice-code-form .muted{margin:0 0 12px}
+.practice-code-form label{display:grid;gap:7px;margin:12px 0;color:#425773;font-size:10px;font-weight:700}
+.practice-code-form select,.practice-code-form textarea{width:100%;border:1px solid #d5dfeb;background:#fff;color:var(--ink);border-radius:8px;padding:11px 12px;outline:0;font-size:12px}
+.practice-code-form textarea{height:180px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px;line-height:1.65}
+.practice-code-form select:focus,.practice-code-form textarea:focus{border-color:#75a9eb;box-shadow:0 0 0 3px #eaf3ff}
+.practice-code-form .submit-tools{margin:-4px 0 10px}

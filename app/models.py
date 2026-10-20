@@ -260,3 +260,15 @@ class PracticeRequest(Base):
     submission_id: Mapped[int] = mapped_column(ForeignKey("submissions.id"))
     match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
+class PracticeSubmissionRequest(Base):
+    __tablename__ = "practice_submission_requests"
+    __table_args__ = (UniqueConstraint("player_id", "idempotency_key", name="uq_practice_submission_key"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128))
+    submission_id: Mapped[int] = mapped_column(ForeignKey("submissions.id"), unique=True)
+    rules_digest: Mapped[str] = mapped_column(String(64))
+    environment: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)

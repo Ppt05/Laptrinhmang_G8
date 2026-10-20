@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" crossorigin="anonymous">
   <script>
     const assetRoot = location.protocol === 'file:' ? '' : '/assets/';
-    for (const [file, version] of [['app.css', '15'], ['status.css', '4'], ['tournament.css', '6'], ['cloudlight.css', '1']]) {
+    for (const [file, version] of [['app.css', '16'], ['status.css', '4'], ['tournament.css', '6'], ['cloudlight.css', '1']]) {
       const stylesheet = document.createElement('link');
       stylesheet.rel = 'stylesheet';
       stylesheet.href = `${assetRoot}${file}?v=${version}`;
@@ -130,6 +130,15 @@
             <div class="panel-title"><div><div class="eyebrow">PRACTICE MODE</div><h3>Luyện tập với bot mẫu</h3></div><span class="file-badge">1 ván · Không tính điểm</span></div>
             <p class="muted">Chọn bot mẫu của BTC và bot ready của đội để chơi một ván. Tối đa 10 trận mỗi ngày; Practice không ảnh hưởng điểm giải hoặc Elo.</p>
             <div id="practiceGuestHint" class="empty-state">Đăng nhập để chọn bot của đội và bắt đầu luyện tập. <button class="text-button" type="button" data-open-account="login">Mở tài khoản →</button></div>
+            <form id="practiceCodeForm" class="practice-code-form hidden">
+              <h4>Nộp bot để luyện tập</h4>
+              <p class="muted">Không cần mở Tournament. Bot sẽ được kiểm tra theo luật Practice trước khi dùng để đấu.</p>
+              <label>Ngôn ngữ<select name="language"><option value="python">Python 3</option><option value="cpp">C++17</option></select></label>
+              <label>Mã nguồn bot<textarea name="source" required spellcheck="false" placeholder="Viết thuật toán trong hàm mẫu…"></textarea></label>
+              <div class="submit-tools"><span>Giới hạn 100 KB</span></div>
+              <button id="practiceCodeSubmit" class="button button-outline full" type="submit">Nộp bot Practice <span>↑</span></button>
+              <div class="form-message" aria-live="polite"></div>
+            </form>
             <form id="practiceForm" class="hidden">
               <label>Bot mẫu<select name="opponent_id" required><option value="">Đang tải bot mẫu…</option></select></label>
               <label>Bot của đội<select name="submission_id" required><option value="">Chọn bot ready</option></select></label>
@@ -231,7 +240,7 @@ def choose_move(state):
     <div id="signedIn" class="signed-in hidden"><div class="signed-avatar">♟</div><div class="signed-copy"><span class="eyebrow">ĐỘI ĐANG ĐĂNG NHẬP</span><h3 id="teamName">—</h3><button id="logoutBtn" class="text-button" type="button">Đăng xuất</button></div></div>
   </dialog>
   <script>
-    for (const [file, version] of [['cloudlight.js', '1'], ['letter-3d-swap.js', '1'], ['app.js', '16'], ['tournament-rounds.js', '1'], ['tournament.js', '7']]) {
+    for (const [file, version] of [['cloudlight.js', '1'], ['letter-3d-swap.js', '1'], ['app.js', '17'], ['tournament-rounds.js', '1'], ['tournament.js', '7']]) {
       const script = document.createElement('script');
       script.src = `${assetRoot}${file}?v=${version}`;
       script.async = false;
