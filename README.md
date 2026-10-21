@@ -90,7 +90,7 @@ Website và PostgreSQL vẫn chạy trên Render; Docker Desktop trên máy cá 
    Copy-Item .env.worker.example .env.worker
    ```
 
-2. Trong Render Dashboard, lấy **External Database URL** của PostgreSQL rồi đặt vào `DATABASE_URL` trong `.env.worker`. Đặt `WORKER_ID` riêng cho từng máy, ví dụ `may-1`. Không chia sẻ hoặc commit file `.env.worker`.
+2. Dùng file cấu hình worker mà nhóm gửi riêng. Nếu file đó tên `team-access.env`, sao chép nó thành `.env.worker` bằng `Copy-Item team-access.env .env.worker`; nếu `.env.worker` đã có cấu hình đang chạy thì **không chép đè**. File này chứa `DATABASE_URL` trỏ tới PostgreSQL Render. Nếu chưa được cấp file, lấy **External Database URL** từ Render Dashboard và đặt vào `DATABASE_URL` trong `.env.worker`. Đặt `WORKER_ID` riêng cho từng máy, ví dụ `may-1`. Không chia sẻ hoặc commit các file cấu hình bí mật.
 
 3. Mở Docker Desktop, bảo đảm Docker Engine hoạt động, rồi chạy:
 
