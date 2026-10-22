@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="local-token" content="__LOCAL_TOKEN__">
+  <title>Thử bot cục bộ · RPS Code Clash</title>
+  <link rel="stylesheet" href="/local.css"><script src="/local.js" defer></script>
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="/">RPS <span>CODE CLASH</span></a><span class="local-badge"><i></i> LOCAL LAB</span></header>
+  <main class="wrap">
+    <div class="intro"><div><p class="eyebrow">ĐẤU TRƯỜNG TRÊN MÁY BẠN</p><h1>Thử chiến thuật. Đọc từng nước.</h1><p>Cho hai bot đấu thật, dừng từng lượt và tìm lý do một chiến thuật thất bại.</p></div><div class="privacy">Không đăng nhập · Không quota<br><strong>Không gửi source lên BTC</strong></div></div>
+    <div id="notice" class="notice" role="status" hidden></div>
+    <div class="lab-grid">
+      <section class="panel setup" aria-labelledby="setup-title">
+        <div class="panel-heading"><h2 id="setup-title">Hai phía đối kháng</h2><button id="swap" class="text-button" type="button">Đổi phía ⇄</button></div>
+        <div class="bot-editor" data-side="south"><div class="bot-title"><span class="dot south"></span><h3>Bot A <small>South · đi trước</small></h3></div>
+          <label>Chọn bot<select id="sample-a" aria-label="Bot A mẫu"><option value="greedy">Mẫu Greedy · Python</option><option value="first">Mẫu First · Python</option><option value="random">Mẫu Random · Python</option><option value="first-cpp">Mẫu First · C++17</option><option value="custom">Source của bạn</option></select></label>
+          <label class="file-pick">Mở file .py hoặc .cpp<input id="file-a" type="file" accept=".py,.cpp,.cc,.cxx" aria-label="Mở file bot A"></label>
+          <div class="source-meta"><input id="name-a" aria-label="Tên bot A" value="Greedy"><select id="language-a" aria-label="Ngôn ngữ bot A"><option value="python">Python</option><option value="cpp">C++17</option></select></div>
+          <label class="sr-only" for="source-a">Source bot A</label><textarea id="source-a" spellcheck="false" placeholder="def choose_move(state): ..."></textarea>
+        </div>
+        <div class="bot-editor" data-side="north"><div class="bot-title"><span class="dot north"></span><h3>Bot B <small>North · đối thủ</small></h3></div>
+          <label>Chọn bot<select id="sample-b" aria-label="Bot B mẫu"><option value="random">Mẫu Random · Python</option><option value="greedy">Mẫu Greedy · Python</option><option value="first">Mẫu First · Python</option><option value="first-cpp">Mẫu First · C++17</option><option value="custom">Source / phiên bản cũ</option></select></label>
+          <label class="file-pick">Mở file .py hoặc .cpp<input id="file-b" type="file" accept=".py,.cpp,.cc,.cxx" aria-label="Mở file bot B"></label>
+          <div class="source-meta"><input id="name-b" aria-label="Tên bot B" value="Random"><select id="language-b" aria-label="Ngôn ngữ bot B"><option value="python">Python</option><option value="cpp">C++17</option></select></div>
+          <label class="sr-only" for="source-b">Source bot B</label><textarea id="source-b" spellcheck="false" placeholder="def choose_move(state): ..."></textarea>
+        </div>
+        <div class="settings"><label>Môi trường<select id="backend"><option value="native">Native · debug nhanh</option><option value="docker">Docker · sandbox BTC</option></select></label><label>Giới hạn lượt<input id="max-moves" type="number" min="1" max="200" value="200"></label></div>
+        <p id="backend-note" class="hint">Native chạy code với quyền tài khoản máy bạn. Dùng source của bạn hoặc bot mẫu; chọn Docker để thử code chưa tin cậy.</p>
+        <button id="prepare" class="button primary wide" type="button">Biên dịch & tạo ván</button>
+      </section>
+      <section class="panel arena" aria-labelledby="arena-title">
+        <div class="panel-heading"><h2 id="arena-title">Bàn đấu</h2><span id="phase" class="phase" aria-live="polite">Sẵn sàng</span></div>
+        <div class="versus"><div><span class="dot south"></span><strong id="team-a">Bot A</strong></div><span>VS</span><div><strong id="team-b">Bot B</strong><span class="dot north"></span></div></div>
+        <div class="canvas-wrap"><canvas id="board" width="720" height="720" role="img" aria-label="Bàn cờ OTTv2 9 nhân 9"></canvas></div>
+        <div class="board-caption"><span id="turn-label">Tạo ván để bắt đầu</span><span id="piece-label">20 quân · 9 × 9</span></div>
+        <div id="result" class="result" hidden></div>
+        <div class="controls"><button id="run" class="button primary" type="button" disabled>▶ Chạy</button><button id="step" class="button" type="button" disabled>Đi 1 lượt</button><button id="pause" class="button" type="button" disabled>Tạm dừng</button><button id="stop" class="button danger" type="button" disabled>Dừng ván</button></div>
+        <div class="timeline"><button id="previous" class="icon-button" type="button" aria-label="Xem lượt trước" disabled>←</button><input id="timeline" type="range" min="0" max="0" value="0" aria-label="Lượt đang xem"><button id="next" class="icon-button" type="button" aria-label="Xem lượt sau" disabled>→</button><output id="counter">0 / 0</output></div>
+        <div class="replay-tools"><label>Tốc độ<select id="speed"><option value="0.5">Chậm</option><option value="0.2" selected>Vừa</option><option value="0">Nhanh nhất</option></select></label><button id="download" class="text-button" type="button" disabled>Tải replay ↓</button><label class="text-button import">Mở replay<input id="replay-file" type="file" accept=".json" aria-label="Mở replay JSON"></label></div>
+        <p class="hint">Kéo thanh lượt để xem lại. “Đi 1 lượt” gọi bot cho một nước mới; các mũi tên chỉ xem lịch sử.</p>
+      </section>
+      <section class="panel inspector" aria-labelledby="inspector-title">
+        <div class="panel-heading"><h2 id="inspector-title">Kính lúp chiến thuật</h2><span id="timing" class="timing">— ms</span></div>
+        <div class="tabs" role="tablist" aria-label="Thông tin debug"><button id="tab-moves" role="tab" aria-selected="true" data-tab="moves">Nước đi</button><button id="tab-observation" role="tab" aria-selected="false" data-tab="observation">Đầu vào</button><button id="tab-logs" role="tab" aria-selected="false" data-tab="logs">Log</button></div>
+        <div id="moves" class="tab-panel" role="tabpanel" aria-labelledby="tab-moves"><p class="hint">Chọn một nước để xem lại bàn cờ tại thời điểm đó.</p><ol id="move-list" class="move-list"></ol><div id="action-detail" class="action-detail">Chưa có nước đi.</div></div>
+        <div id="observation" class="tab-panel" role="tabpanel" aria-labelledby="tab-observation" hidden><p class="hint">Observation bot nhận trước khi thực hiện nước đang chọn.</p><pre id="observation-json">Chưa có observation.</pre></div>
+        <div id="logs" class="tab-panel" role="tabpanel" aria-labelledby="tab-logs" hidden><p class="hint">Python: print(..., file=sys.stderr)<br>C++: std::cerr &lt;&lt; ... &lt;&lt; std::endl;<br>stdout dành riêng cho giao thức bot.</p><h3>South · Bot A</h3><pre id="log-a">Chưa có log.</pre><h3>North · Bot B</h3><pre id="log-b">Chưa có log.</pre></div>
+      </section>
+    </div>
+    <footer>LOCAL PRACTICE · Kết quả không tính Elo. Native dùng cùng engine và SDK; Docker áp dụng giới hạn sandbox của BTC.</footer>
+  </main>
+</body>
+</html>

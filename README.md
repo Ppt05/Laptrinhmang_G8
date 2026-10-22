@@ -34,6 +34,49 @@ Practice hoạt động độc lập với Tournament: không cần giải đang
 
 Job Tournament được worker ưu tiên trước công việc Practice. Vì vậy, nếu worker bận, bài Practice có thể ở trạng thái chờ đến khi worker xử lý.
 
+## Thử bot cục bộ — không dùng worker BTC
+
+Chạy hai bot C++17/Python ngay trên máy của bạn, không cần PostgreSQL, tài khoản,
+Docker hay dependency pip ở chế độ Native. Cần **Python 3.10+**; C++ cần `g++`
+trong PATH hoặc biến môi trường `CXX` trỏ đến compiler tương thích g++.
+
+```powershell
+python -m app.local
+```
+
+Mở **http://127.0.0.1:8765**. Chọn hai bot mẫu hoặc mở hai file source (ví dụ V2
+đấu V1), bấm **Biên dịch & tạo ván**. Dùng **Đi 1 lượt**, **Chạy**, **Tạm dừng**,
+**Đổi phía**, xem observation từng nước và stderr. Có thể tải/mở replay JSON;
+replay chỉ phát lại dữ liệu đã lưu. Kết quả local không tính Elo và không dùng quota
+Practice/Tournament. Link **Thử cục bộ** trên website mở hướng dẫn `/local`.
+
+Native chạy code bằng quyền tài khoản máy bạn: chỉ chạy source của mình hoặc bot
+mẫu tin cậy. Native dùng **cùng engine, API callback và schema JSON** với worker;
+thời gian tối đa 15 giây ở nước đầu, 1,5 giây/nước sau, 200 nước, nhưng không áp
+dụng quota RAM/CPU Docker. Ghi debug bằng `print(..., file=sys.stderr)` hoặc
+`std::cerr`; không ghi thêm vào stdout. Hai tiến trình bot giữ biến toàn cục giữa
+các nước. Bot random tự quản lý seed của mình; bộ luật có một thế cờ đầu cố định,
+không có random map hay cam kết tái hiện hành vi của bot dùng đồng hồ/random.
+
+Để thử trong sandbox tương tự BTC (256 MiB, 1 CPU, không mạng):
+
+```powershell
+docker build -f sandbox/Dockerfile -t oantuti-sandbox:dev .
+python -m app.local --backend docker
+```
+
+Dùng `--image image@sha256:...` để khớp chính xác image giải, `--port 8766` nếu
+cổng bận. Local lab chỉ bind `127.0.0.1`, không đọc cấu hình DB/BTC và không gửi
+source đi đâu. Máy ở trạng thái sleep hoặc bị tải nặng có thể làm bot timeout.
+Tắt local runner bằng Ctrl+C. Trong lúc biên dịch, lệnh dừng có thể cần đợi compiler
+hoàn tất (tối đa 35 giây); bot đang chạy được dừng và dọn tiến trình.
+
+Kiểm thử local không cần DB/Docker:
+
+```powershell
+python -m unittest tests.test_local -v
+```
+
 ## Cách một trận được xử lý
 
 ```mermaid

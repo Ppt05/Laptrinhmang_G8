@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Thử bot trên máy bạn · RPS Code Clash</title><link rel="stylesheet" href="/assets/local.css"></head>
+<body><header class="topbar"><a class="brand" href="/">RPS <span>CODE CLASH</span></a><span class="local-badge">LOCAL LAB</span></header><main class="panel guide">
+<div class="intro"><div><p class="eyebrow">LUYỆN TẬP KHÔNG QUOTA</p><h1>Cải thiện bot trên máy bạn.</h1></div></div>
+<p>Cho bot mới đấu với bot mẫu, phiên bản cũ hoặc bot bạn bè chia sẻ. Xem từng nước, observation, log và replay. Source ở trên máy bạn; không cần tài khoản, database hay lượt Practice của BTC.</p>
+<h2>1. Lấy mã nguồn và mở local lab</h2><p>Cần Python 3.10 trở lên. Cài thêm <code>g++</code> hỗ trợ C++17 nếu thử bot C++; Python không cần compiler C++ hay thư viện pip.</p>
+<pre>git clone https://github.com/Ppt05/Laptrinhmang_G8.git
+cd Laptrinhmang_G8
+python -m app.local</pre>
+<p>Mở địa chỉ local bên dưới sau khi terminal báo sẵn sàng.</p><a class="button primary" href="http://127.0.0.1:8765/" target="_blank" rel="noopener">Mở local lab ↗</a>
+<h2>2. Chọn hai đối thủ và thử chiến thuật</h2><p>Mở source <code>.py</code>/<code>.cpp</code> của Bot A và Bot B, hoặc dùng First, Greedy, Random. Bấm <strong>Biên dịch &amp; tạo ván</strong>, rồi <strong>Đi 1 lượt</strong> hoặc <strong>Chạy</strong>. Dùng <strong>Đổi phía</strong> trước khi tạo ván tiếp theo để thử cả hai phía.</p>
+<h2>3. Debug và xem lại</h2><p>Tab <strong>Đầu vào</strong> hiển thị observation của nước đang chọn. Tab <strong>Log</strong> nhận stderr: Python dùng <code>print(..., file=sys.stderr)</code>, C++ dùng <code>std::cerr</code>. Tải replay để giữ lại ván lỗi; mở replay không chạy lại code bot.</p>
+<h2>Muốn kiểm tra trong sandbox?</h2><p>Native chạy code với quyền tài khoản máy bạn, phù hợp bot do bạn viết. Với code chưa tin cậy hoặc khi cần thử giới hạn giống BTC, cài Docker và chạy:</p>
+<pre>docker build -f sandbox/Dockerfile -t oantuti-sandbox:dev .
+python -m app.local --backend docker</pre>
+<p>Local lab dùng cùng engine và SDK với worker. Native không áp dụng giới hạn RAM/CPU của Docker. Kết quả local không đổi Elo; khi bot đã ổn, dùng Practice trên worker BTC hoặc nộp vào Tournament.</p>
+<a class="button" href="/">← Quay lại cuộc thi</a></main></body></html>

@@ -165,6 +165,11 @@ def home():
 def admin_page():
     return FileResponse(WEB_DIR / "admin.html")
 
+@app.get("/local")
+def local_lab_guide():
+    # Instructions only: submitted code is executed by the user's loopback app.
+    return FileResponse(WEB_DIR / "local-guide.html")
+
 @app.get("/api/meta")
 def meta():
     with SessionLocal() as db:
