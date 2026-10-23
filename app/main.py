@@ -16,6 +16,7 @@ from .security import authorized_player, check_registration, digest, hash_passwo
 from .schema import ensure_schema
 from . import tournament
 from .tournament_api import router as tournament_router
+from . import daily
 
 app = FastAPI(title="OanTuTi Bot League", version="0.2.0", description="OTTv2: game chiến thuật bàn cờ 9×9",
               docs_url=None, redoc_url=None, openapi_url=None)
@@ -23,6 +24,7 @@ VN = ZoneInfo(os.getenv("EVENT_TIMEZONE", "Asia/Ho_Chi_Minh"))
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 app.mount("/assets", StaticFiles(directory=WEB_DIR), name="assets")
 app.include_router(tournament_router)
+app.include_router(daily.router)
 
 @app.on_event("startup")
 def startup():
@@ -48,6 +50,7 @@ def mark_match_void(match: Match, reason: str):
 def match_for_teams_on_day(db, team_ids, day, exclude_id=None):
     query = select(Match.id).where(
         Match.event_day == day,
+        Match.kind.in_(["daily", "rematch"]),
         Match.status != "void",
         (Match.player_a.in_(team_ids)) | (Match.player_b.in_(team_ids)),
     )
@@ -170,7 +173,7 @@ def meta():
     with SessionLocal() as db:
         active = db.scalar(select(tournament.Tournament).where(tournament.Tournament.status.not_in(["complete", "cancelled"])))
         return {"name": "OanTuTi Bot League", "protocol_version": 2,
-                "modes": {"tournament": True, "daily": False, "challenge": False, "practice": True},
+                "modes": {"tournament": True, "daily": daily.enabled(db), "challenge": False, "practice": True},
                 "tournament": {"id": active.id, "status": active.status} if active else None,
                 **get_event_state(db, matches_engine_enabled())}
 
@@ -240,6 +243,8 @@ def admin_void_and_replay(match_id: int, body: VoidMatchInput,
         m = db.scalar(select(Match).where(Match.id == match_id).with_for_update())
         if not m:
             raise HTTPException(404, "Không tìm thấy trận")
+        if m.kind == "daily":
+            raise HTTPException(409, "Daily: retry cùng ID trận lỗi hoặc hủy để trả lượt; không tạo rematch")
         if m.encounter_id:
             raise HTTPException(409, "Dùng điều khiển Tournament để xử lý ván của giải")
         if m.status not in ("done", "failed"):
@@ -272,6 +277,7 @@ def admin_void_match(match_id: int, body: VoidMatchInput,
                      x_admin_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
     require_admin(x_admin_key, authorization)
     with SessionLocal.begin() as db:
+        tournament.serialize(db)
         m = db.scalar(select(Match).where(Match.id == match_id).with_for_update())
         if not m:
             raise HTTPException(404, "Không tìm thấy trận")
@@ -282,6 +288,7 @@ def admin_void_match(match_id: int, body: VoidMatchInput,
         if db.scalar(select(Match.id).where(Match.replay_of == match_id)):
             raise HTTPException(409, "Trận này đã được tạo trận đấu lại")
         mark_match_void(m, body.reason)
+        daily.after_game(db, m)
         return {"voided_match_id": m.id, "status": "void"}
 
 @app.get("/health")
@@ -463,7 +470,10 @@ def submissions(player_id: int = Depends(authorized_player)):
     day_start, day_end = submission_day_bounds(datetime.now(VN).date())
     with SessionLocal() as db:
         rows = db.scalars(select(Submission).where(Submission.player_id == player_id).order_by(Submission.id.desc())).all()
+        daily_ids = set(db.scalars(select(daily.DailyEntry.submission_id).where(daily.DailyEntry.player_id == player_id)))
+        practice_ids = set(db.scalars(select(PracticeSubmissionRequest.submission_id).where(PracticeSubmissionRequest.player_id == player_id)))
         return [{"id": x.id, "language": x.language, "status": x.status, "compile_error": x.compile_error,
+                 "mode": "daily" if x.id in daily_ids else "practice" if x.id in practice_ids else "tournament",
                  "created_at": x.created_at.isoformat() if x.created_at else None,
                  "eligible_today": bool(x.status == "ready" and x.created_at and day_start <= x.created_at < day_end)}
                 for x in rows]

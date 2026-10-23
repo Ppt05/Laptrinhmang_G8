@@ -1,5 +1,12 @@
 # OTTv2 — cuộc thi lập trình bot Oẳn Tù Tì
 
+> **Chế độ hiện tại:** Tournament và Practice hoạt động; Daily đã triển khai, mặc định tắt,
+> bật tại trang admin. Challenge chưa triển khai. Xem [hướng dẫn Daily](DAILY.md)
+> và [GAMERULE.md](GAMERULE.md) để dùng đúng quota và lịch hiện tại.
+> Các phần hướng dẫn ghép theo lịch ngày bên dưới mô tả luồng cũ; Daily mới dùng
+> tối đa 5 bài nộp và 5 trận/ngày. Đội chọn bot sẵn sàng rồi chủ động Tìm trận;
+> nộp bot không tự vào hàng chờ. Bảng Daily xếp theo Elo, điểm để tham khảo.
+
 Đây là website tổ chức cuộc thi **lập trình bot**, không phải trò chơi mà hai người bấm Đấm/Kéo/Lá trực tiếp. Mỗi đội đăng ký tài khoản, nộp mã nguồn Python 3 hoặc C++17 **trong từng ngày muốn dự thi**. Khi đến lịch do ban tổ chức đặt, hệ thống tự chọn các đội có bot nộp trong ngày và biên dịch thành công, ghép cặp ngẫu nhiên và cho hai chương trình đấu trên bàn cờ 9×9. Website hiển thị lịch sử, điểm số và phát lại từng nước đi.
 
 ## Xem sản phẩm

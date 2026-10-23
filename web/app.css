@@ -266,3 +266,8 @@ main,.footer{margin-left:var(--sidebar-width);transition:margin-left .22s ease}
 .practice-code-form textarea{height:180px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px;line-height:1.65}
 .practice-code-form select:focus,.practice-code-form textarea:focus{border-color:#75a9eb;box-shadow:0 0 0 3px #eaf3ff}
 .practice-code-form .submit-tools{margin:-4px 0 10px}
+#dailyPanel .admin-actions{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0}
+#dailyPanel .table-scroll{overflow-x:auto}
+#dailyPanel #dailyState{padding:12px;border-radius:8px;background:#eef6ff;color:#315d8d;font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+#dailyPanel #dailyDay{max-width:240px;width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
+#dailyPanel #dailyMessage{font-size:12px;line-height:1.7;overflow-wrap:anywhere}

@@ -597,7 +597,7 @@ def pump(db):
         if e.player_a in busy or e.player_b in busy:
             continue
         # Preserve running legacy games during upgrade; do not overlap them.
-        if db.scalar(select(Match.id).where(Match.encounter_id.is_(None), Match.status.in_(["running", "queued"]),
+        if db.scalar(select(Match.id).where(Match.encounter_id.is_(None), Match.kind != "practice", Match.status == "running",
             (Match.player_a.in_([e.player_a, e.player_b])) | (Match.player_b.in_([e.player_a, e.player_b])))):
             continue
         e.status = "running"

@@ -2,6 +2,8 @@
 
 ## 1. Hiệu lực và phạm vi áp dụng
 
+Cập nhật Daily 2026-10-23: tối đa 5 lượt nộp bot và 5 trận/ngày/đội; đội chủ động tìm trận bằng một bài Daily sẵn sàng trong ngày. Mỗi trận khóa phiên bản bot riêng. Bảng Daily xếp theo Elo chung, điểm Daily để tham khảo. Chỉ áp dụng cho yêu cầu mới sau nâng cấp; giữ nguyên bản chụp, kết quả và replay đã lưu.
+
 Phiên bản 2026-10-18.4: điều hành loại trực tiếp liên tục, chốt encounter ngay khi đủ ván và không có hold/khiếu nại đang xử lý. Chỉ mở cửa sổ nộp vòng kế tiếp sau khi đủ các suất đi tiếp. Chính sách điều hành này áp dụng cho knockout đang và sắp diễn ra; không sửa kết quả, replay, bản chụp hoặc luật bàn cờ đã lưu. Vòng bảng vẫn giữ hạn khiếu nại 30 phút.
 
 Thay đổi 2026-10-18.3: BTC có thể ủy quyền worker tự điều hành theo các mốc thời gian tại mục 11.1. Giữ nguyên luật bàn cờ, thể thức, thời hạn khiếu nại và bản chụp đã lưu của giải cũ.
@@ -30,17 +32,21 @@ Phiên bản này có hiệu lực theo mốc công bố và phạm vi áp dụn
 | Chế độ | Ghép đối thủ | Số ván/trận | Điểm và Elo | Bot sử dụng |
 | --- | --- | --- | --- | --- |
 | Tournament | Lịch giải do hệ thống lập, BTC xác nhận | Bảng: 2; knockout: 6 chính, tối đa 4 phụ | Điểm giải; Elo cho trận thực đấu hợp lệ | Khóa theo vòng thi |
-| Daily | Tự động giữa các đội opt-in | 1 | Điểm Daily 1/0,5/0; Elo | Bài Daily riêng, nộp trong ngày |
+| Daily | Đội chủ động tìm; hệ thống ghép đối thủ | 1 | Xếp theo Elo chung; điểm Daily 1/0,5/0 tham khảo | Bài Daily sẵn sàng trong ngày, khóa riêng cho từng trận |
 | Challenge | Đội mời, đối thủ chấp nhận | 2, đổi phe | Giao hữu, không điểm chính hoặc Elo | Bài `ready` được mỗi đội chọn lúc chấp nhận |
 | Practice | Đội chọn bot mẫu BTC | 1 | Không điểm hoặc Elo | Bài `ready` của đội, kể cả bài cũ tương thích |
 
-Daily mặc định tắt. Mỗi đội được nộp tối đa một bài Daily/ngày và chơi tối đa một trận Daily tính điểm/ngày. Ngày được xác định theo UTC+7; lượt bị hủy vì hạ tầng không làm mất quyền Daily, còn retry cùng trận không tạo lượt mới.
+Daily mặc định tắt. Mỗi đội được nộp tối đa **5 bài Daily/ngày**, kể cả bài lỗi code, và chơi tối đa **5 trận Daily/ngày**. Hai quota độc lập. Ngày được xác định theo UTC+7. Trận đã ghép (kể cả đang chờ, đang chạy hoặc lỗi hạ tầng chờ xử lý) giữ một lượt; trận bị hủy vì hạ tầng trả lại lượt. Retry cùng trận hoặc kiểm tra lại cùng bài lỗi hạ tầng không tạo lượt mới.
+
+Nộp bài không tự tham gia hàng chờ. Đội chọn một bài Daily `ready` của chính đội, đã nộp trong ngày, rồi chủ động **Tìm trận**. Mỗi đội chỉ có một yêu cầu tìm trận hoặc một trận Daily chưa xử lý xong. Có thể hủy tìm trước khi ghép mà không mất lượt. Khi ghép, hệ thống khóa hai submission và môi trường của chúng; bài nộp mới không thay bot của trận cũ. Sau mỗi trận, đội phải chủ động tìm lại. Hàng chờ hết hiệu lực khi sang ngày mới; bài hôm trước không dùng để tìm trận mới.
+
+Hệ thống ưu tiên yêu cầu chờ lâu trong mỗi nhóm bot tương thích, sau đó chọn đối thủ ít gặp trong ngày và phương án giảm chênh lệch số lượt cầm Nam/Bắc. Nếu bằng nhau, dùng ngẫu nhiên có seed lưu lại. Cho phép tái đấu nếu không có đối thủ phù hợp khác; không bảo đảm tuyệt đối phe cân bằng khi số lượt lẻ hoặc các đội tham gia không đều. Không ghép bot khác bản chụp luật hoặc môi trường. Bảng Daily xếp theo Elo chung với Tournament, sau đó tổng điểm Daily và ID đội; bộ lọc ngày chỉ lọc đội/trận Daily, Elo vẫn là giá trị chung hiện tại.
 
 Practice tối đa 10 trận được chấp nhận/ngày/đội, mỗi đội chỉ có một trận Practice đang chờ hoặc chạy. Retry hạ tầng không tiêu tốn thêm quota. Job Practice có ưu tiên thấp hơn Tournament.
 
 Challenge mặc định tắt cho tới khi BTC công bố quota và thời hạn chấp nhận. Khi bật, mỗi đội chỉ được có một Challenge đang chờ hoặc chạy; số trận chấp nhận/ngày không được vượt quota đã công bố. Retry hạ tầng không tiêu tốn thêm quota.
 
-Không chạy đồng thời hai trận tính Elo có cùng một đội. Tournament có ưu tiên xếp lịch cao hơn Daily; nếu Daily đã chạy thì để hoàn tất, giữ Tournament chờ thay vì hủy ván hợp lệ. Không nhận Daily mới cho đội đang có trận Tournament chờ hoặc chạy. Mỗi kết quả Elo của đội phải được chốt trước khi bắt đầu trận tính Elo tiếp theo của đội đó.
+Không chạy đồng thời hai trận tính Elo có cùng một đội. Tournament có ưu tiên xếp lịch cao hơn Daily; nếu Daily đã chạy thì để hoàn tất, giữ Tournament chờ thay vì hủy ván hợp lệ. Không nhận yêu cầu tìm trận Daily mới cho đội đang có trận Tournament chờ hoặc chạy; vẫn cho nộp/kiểm tra bot trong quota riêng. Mỗi kết quả Elo của đội phải được chốt trước khi bắt đầu trận tính Elo tiếp theo của đội đó.
 
 Tất cả hạn dùng thời gian nhận của server; giao diện hiển thị UTC+7. Bài được nhận khi thời điểm nhận nhỏ hơn hoặc bằng hạn đóng. Cửa sổ đăng ký và cửa sổ nộp bot là hai cửa sổ riêng.
 
