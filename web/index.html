@@ -65,6 +65,9 @@
       <button id="modeDaily" class="sidebar-link sidebar-mode" type="button" data-mode="daily" aria-label="Daily, Thi đấu mỗi ngày" aria-pressed="false" title="Daily · Thi đấu mỗi ngày">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 11h18m-14 5h4"/></svg><span><strong>Daily</strong><small>Thi đấu mỗi ngày</small></span>
       </button>
+      <a class="sidebar-link" href="/local" aria-label="Thử bot cục bộ trên máy bạn" title="Thử bot cục bộ">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4m-5-12 3 2-3 2m6 0h4"/></svg><span><strong>Thử cục bộ</strong><small>Hai bot · Không quota</small></span>
+      </a>
     </nav>
   </aside>
 
@@ -151,6 +154,7 @@
           <article id="practicePanel" class="panel practice-panel hidden" data-mode-panel="practice">
             <div class="panel-title"><div><div class="eyebrow">PRACTICE MODE</div><h3>Luyện tập với bot mẫu</h3></div><span class="file-badge">1 ván · Không tính điểm</span></div>
             <p class="muted">Chọn bot mẫu của BTC và bot ready của đội để chơi một ván. Tối đa 10 trận mỗi ngày; Practice không ảnh hưởng điểm giải hoặc Elo.</p>
+            <p class="muted">Muốn thử nhanh với phiên bản bot cũ, xem log và đi từng lượt? <a class="inline-link" href="/local">Mở hướng dẫn thử cục bộ →</a></p>
             <div id="practiceGuestHint" class="empty-state">Đăng nhập để chọn bot của đội và bắt đầu luyện tập. <button class="text-button" type="button" data-open-account="login">Mở tài khoản →</button></div>
             <form id="practiceCodeForm" class="practice-code-form hidden">
               <h4>Nộp bot để luyện tập</h4>

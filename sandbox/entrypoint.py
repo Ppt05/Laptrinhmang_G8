@@ -99,7 +99,9 @@ def run_bot(language):
     else:
         return 64
     try:
-        proc = subprocess.Popen(command, stdin=0, stdout=1, stderr=subprocess.DEVNULL)
+        # The local lab may opt into stderr; official judging keeps its policy.
+        stderr = None if os.environ.get("OTT_LOCAL_DEBUG") == "1" else subprocess.DEVNULL
+        proc = subprocess.Popen(command, stdin=0, stdout=1, stderr=stderr)
         return proc.wait()
     except Exception:
         return 71

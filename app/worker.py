@@ -10,15 +10,16 @@ from .db import SessionLocal, engine
 from .models import Job, Match, Submission, WorkerNode, RoundSubmission, TournamentRound, GameAttempt
 from . import tournament, daily
 from .game_setup import coord, new_game, square
+from .game_engine import BEATS, legal_moves, apply_move, position_key, parse_reply, MatchEngine
 from .event_schedule import get_event_state, submission_day_bounds
 from .schema import ensure_schema
+from .sandbox_runtime import sandbox_args
 
 DATA = Path(os.getenv("APP_DATA", "/app/data")); ARTIFACTS = DATA / "artifacts"
 IMAGE = os.getenv("SANDBOX_IMAGE", "oantuti-sandbox:dev")
 JUDGE_ENV = ContextVar("judge_environment", default=None)
 WORKER_ID = os.getenv("WORKER_ID", "may-1")
 # OTTv2 tactical board game: coordinates use a1=(0,0), i9=(8,8).
-BEATS = {"rock": "scissors", "scissors": "paper", "paper": "rock"}
 _PIPE_READERS = weakref.WeakKeyDictionary()
 _PIPE_READERS_LOCK = threading.Lock()
 
@@ -42,54 +43,6 @@ def _pipe_reader(stream):
 
             threading.Thread(target=pump, daemon=True).start()
         return reader
-
-def legal_moves(game, side):
-    occupied = {(p["x"], p["y"]): p for p in game["pieces"]}
-    result = []
-    for p in game["pieces"]:
-        if p["side"] != side:
-            continue
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                if dx == dy == 0:
-                    continue
-                x, y = p["x"] + dx, p["y"] + dy
-                if not (0 <= x < 9 and 0 <= y < 9):
-                    continue
-                other = occupied.get((x, y))
-                if other and (other["side"] == side or BEATS[p["type"]] != other["type"]):
-                    continue
-                result.append({"piece_id": p["id"], "from": square(p["x"], p["y"]), "to": square(x, y),
-                               "capture": other["id"] if other else None})
-    return result
-
-def apply_move(game, move):
-    nxt = json.loads(json.dumps(game))
-    piece = next(p for p in nxt["pieces"] if p["id"] == move["piece_id"])
-    x, y = coord(move["to"])
-    captured = next((p for p in nxt["pieces"] if p["x"] == x and p["y"] == y), None)
-    if captured:
-        nxt["pieces"].remove(captured)
-    piece["x"], piece["y"] = x, y
-    goal = (0, 0) if piece["side"] == "north" else (8, 8)
-    if (x, y) == goal:
-        nxt["winner"], nxt["win_reason"] = piece["side"], "goal"
-    elif captured and not any(p["side"] == captured["side"] and p["type"] == captured["type"] for p in nxt["pieces"]):
-        nxt["winner"], nxt["win_reason"] = piece["side"], "elimination"
-    else:
-        nxt["turn"] = "north" if piece["side"] == "south" else "south"
-    nxt["move_number"] += 1
-    return nxt
-
-def position_key(game):
-    pieces = sorted((p["id"], p["side"], p["type"], p["x"], p["y"]) for p in game["pieces"])
-    return json.dumps([game["turn"], pieces], separators=(",", ":"))
-
-def sandbox_args():
-    # Docker mounts tmpfs with noexec by default. C++ artifacts must execute
-    # from /tmp/program; the other sandbox restrictions remain in force.
-    cmd = ["docker", "run", "--rm", "-i", "--network", "none", "--read-only", "--tmpfs", "/tmp:rw,exec,nosuid,nodev,size=32m,mode=1777", "--user", "10001:10001", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--memory", "256m", "--cpus", "1", "--pids-limit", "32"]
-    return cmd
 
 def docker_cmd(mode, lang):
     env = JUDGE_ENV.get()
@@ -209,23 +162,6 @@ def unsolicited(proc, pending):
     return False
 
 
-def parse_reply(raw, choices):
-    def unique(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError("Duplicate JSON key")
-            result[key] = value
-        return result
-    try:
-        reply = json.loads(raw.decode("utf-8"), object_pairs_hook=unique) if raw and len(raw) <= 256 and raw.endswith(b"\n") else None
-        if not isinstance(reply, dict) or set(reply) != {"piece_id", "to"} or not all(isinstance(v, str) for v in reply.values()):
-            return None
-        return next((mv for mv in choices if mv["piece_id"] == reply["piece_id"] and mv["to"] == reply["to"]), None)
-    except (UnicodeDecodeError, ValueError):
-        return None
-
-
 def stop_bot(proc):
     try:
         proc.kill()
@@ -284,83 +220,54 @@ def play_match(db: Session, m: Match):
     a, b = db.get(Submission, m.submission_a), db.get(Submission, m.submission_b)
     if not a or not b or not ensure_local_artifact(db, a) or not ensure_local_artifact(db, b):
         m.status = "failed"; m.detail = json.dumps({"error": "Bot chưa sẵn sàng"}); return
-    game = new_game(); turns = []; side_a, side_b = "south", "north"
     processes, output_buffers, started = {}, {}, {}
+    env = JUDGE_ENV.get()
+    match = MatchEngine(env["max_moves"] if env else int(os.getenv("MATCH_MAX_MOVES", "200")))
+    timeout = env["move_timeout"] if env else float(os.getenv("MATCH_MOVE_TIMEOUT_SECONDS", "1.5"))
+    first_timeout = env["first_timeout"] if env else float(os.getenv("MATCH_FIRST_MOVE_TIMEOUT_SECONDS", "15"))
+    first = {"south": True, "north": True}
     try:
-        env = JUDGE_ENV.get()
-        max_moves = env["max_moves"] if env else int(os.getenv("MATCH_MAX_MOVES", "200"))
-        timeout = env["move_timeout"] if env else float(os.getenv("MATCH_MOVE_TIMEOUT_SECONDS", "1.5"))
-        first_move_timeout = env["first_timeout"] if env else float(os.getenv("MATCH_FIRST_MOVE_TIMEOUT_SECONDS", "15"))
-        first = {"south": True, "north": True}
-        repetitions = {position_key(game): 1}
-        while not game["winner"] and game["move_number"] <= max_moves:
-            side = game["turn"]
-            choices = legal_moves(game, side)
-            if not choices:
-                game["win_reason"] = "no_legal_moves_draw"
-                break
+        while (payload := match.observation()) is not None:
+            side = payload["side"]
             if side not in processes:
                 started[side] = time.monotonic()
-                processes[side], _ = start_bot(a if side == side_a else b)
+                processes[side], _ = start_bot(a if side == "south" else b)
                 output_buffers[processes[side].stdout] = bytearray()
-            player_proc = processes[side]
-            payload = {"protocol_version": 2, "move_number": game["move_number"], "side": side,
-                       "board_size": 9, "pieces": game["pieces"], "legal_moves": choices}
+            proc = processes[side]
             try:
-                if unsolicited(player_proc, output_buffers[player_proc.stdout]):
+                if unsolicited(proc, output_buffers[proc.stdout]):
                     raise BrokenPipeError("Unsolicited response")
-                player_proc.stdin.write((json.dumps(payload, separators=(",", ":")) + "\n").encode())
-                player_proc.stdin.flush()
-                allowance = max(0, first_move_timeout - (time.monotonic() - started[side])) if first[side] else timeout
-                # Each bot's first turn also includes Docker/Python startup time.
-                raw = read_line_timeout(player_proc.stdout, allowance,
-                                        output_buffers[player_proc.stdout])
+                proc.stdin.write((json.dumps(payload, separators=(",", ":")) + "\n").encode())
+                proc.stdin.flush()
+                allowance = max(0, first_timeout - (time.monotonic() - started[side])) if first[side] else timeout
+                raw = read_line_timeout(proc.stdout, allowance, output_buffers[proc.stdout])
             except (BrokenPipeError, OSError):
                 raw = None
             first[side] = False
-            selected = parse_reply(raw, choices)
-            if selected and unsolicited(player_proc, output_buffers[player_proc.stdout]):
+            selected = parse_reply(raw, payload["legal_moves"])
+            if selected and unsolicited(proc, output_buffers[proc.stdout]):
                 selected = None
             if selected is None:
-                # Entry-point failures are infrastructure errors, not a bot
-                # forfeiture. Never award points when the sandbox could not
-                # start the submitted executable.
-                if player_proc.poll() in (64, 70, 71):
+                if proc.poll() in (64, 70, 71):
                     m.status = "failed"
                     m.detail = json.dumps({"error": "Sandbox không khởi chạy được bot",
-                                           "side": side, "exit_code": player_proc.returncode})
+                                           "side": side, "exit_code": proc.returncode})
                     return
-                game["winner"], game["win_reason"] = ("north" if side == "south" else "south"), "invalid_move_or_timeout"
-                turns.append({"move_number": game["move_number"], "side": side, "error": "invalid_move_or_timeout"})
+                match.forfeit()
                 break
-            turns.append({"move_number": game["move_number"], "side": side, **selected})
-            game = apply_move(game, selected)
-            if not game["winner"]:
-                if not legal_moves(game, game["turn"]):
-                    game["win_reason"] = "no_legal_moves_draw"
-                    break
-                key = position_key(game)
-                repetitions[key] = repetitions.get(key, 0) + 1
-                if repetitions[key] >= 3:
-                    game["win_reason"] = "threefold_repetition_draw"
-                    break
-        if not game["winner"] and not game["win_reason"]:
-            game["win_reason"] = "move_limit_draw"
-        winner = game["winner"]
-        if winner == side_a: m.winner_id = m.player_a
-        elif winner == side_b: m.winner_id = m.player_b
-        else: m.winner_id = None
+            match.advance(selected)
+        winner = match.game["winner"]
+        m.winner_id = m.player_a if winner == "south" else m.player_b if winner == "north" else None
         if getattr(m, "kind", None) == "practice":
             m.points_a = m.points_b = 0
-        elif winner == side_a: m.points_a, m.points_b = 1, 0
-        elif winner == side_b: m.points_a, m.points_b = 0, 1
-        else: m.points_a = m.points_b = 0.5
-        m.detail = json.dumps({"protocol_version": 2, "winner_side": winner, "win_reason": game["win_reason"],
-                               "turns": turns, "final_pieces": game["pieces"]})
+        else:
+            m.points_a, m.points_b = (1, 0) if winner == "south" else (0, 1) if winner == "north" else (.5, .5)
+        m.detail = json.dumps(match.detail())
         m.status = "done"
     finally:
-        for p in processes.values():
-            stop_bot(p)
+        for proc in processes.values():
+            stop_bot(proc)
+
 
 def recover_abandoned_jobs(db):
     """Return work from a dead or replaced worker to the shared queue."""
