@@ -305,7 +305,8 @@ def admin_login(body: AdminLogin):
     expected_password = os.getenv("ADMIN_PASSWORD") or os.getenv("ADMIN_API_KEY", "")
     if not expected_password:
         raise HTTPException(503, "Chưa cấu hình tài khoản ban tổ chức")
-    if not secrets.compare_digest(body.username, expected_username) or not secrets.compare_digest(body.password, expected_password):
+    if (not secrets.compare_digest(body.username.encode("utf-8"), expected_username.encode("utf-8")) or
+            not secrets.compare_digest(body.password.encode("utf-8"), expected_password.encode("utf-8"))):
         raise HTTPException(401, "Tên đăng nhập hoặc mật khẩu không đúng")
     return {"access_token": make_admin_token(expected_username), "token_type": "bearer", "expires_in": 28800}
 

@@ -26,6 +26,8 @@ services:
         value: "200"
       - key: EVENT_TIMEZONE
         value: Asia/Ho_Chi_Minh
+      - key: SANDBOX_IMAGE
+        value: sha256:b369879adf039d75cf36150a42fca66a280687fbcd3a624b897f3909f14c3462
 
 databases:
   - name: oantuti-db
