@@ -21,7 +21,8 @@ def ensure_schema():
         # The old constraint also blocked intentional manual rematches on the
         # same day. Keep uniqueness only for automatic daily pairings.
         connection.execute(text("ALTER TABLE matches DROP CONSTRAINT IF EXISTS uq_daily_pair"))
-        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_daily_pair_by_day ON matches (LEAST(player_a, player_b), GREATEST(player_a, player_b), event_day) WHERE kind = 'daily'"))
+        connection.execute(text("DROP INDEX IF EXISTS uq_daily_pair_by_day"))
+        connection.execute(text("DROP INDEX IF EXISTS uq_daily_active_pair"))
         connection.execute(text("ALTER TABLE matches ADD COLUMN IF NOT EXISTS encounter_id INTEGER REFERENCES tournament_encounters(id)"))
         connection.execute(text("ALTER TABLE matches ADD COLUMN IF NOT EXISTS game_number INTEGER"))
         connection.execute(text("CREATE INDEX IF NOT EXISTS ix_matches_encounter_id ON matches (encounter_id)"))
@@ -35,3 +36,10 @@ def ensure_schema():
         connection.execute(text("ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS auto_run BOOLEAN NOT NULL DEFAULT FALSE"))
         connection.execute(text("ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS auto_submission_minutes INTEGER NOT NULL DEFAULT 1440"))
         connection.execute(text("ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS auto_status TEXT"))
+        connection.execute(text("ALTER TABLE tournament_elo_events ALTER COLUMN encounter_id DROP NOT NULL"))
+        connection.execute(text("ALTER TABLE tournament_elo_events ADD COLUMN IF NOT EXISTS match_id INTEGER REFERENCES matches(id)"))
+        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_daily_elo_match ON tournament_elo_events (match_id)"))
+        # Preserve old entries/matches, but require an explicit search for all new games.
+        connection.execute(text("ALTER TABLE daily_entries DROP CONSTRAINT IF EXISTS uq_daily_entry_day"))
+        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_daily_submission_request ON daily_entries (player_id, day, request_key)"))
+        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_daily_waiting_team ON daily_searches (player_id) WHERE status = 'waiting'"))

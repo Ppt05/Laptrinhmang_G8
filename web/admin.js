@@ -153,6 +153,7 @@ function paintRound() {
 
 async function refresh() {
   if(!adminToken) return;
+  if(typeof refreshDailyAdmin === "function") await refreshDailyAdmin();
   const history=await api("/api/tournaments");
   if(!history.some(t=>t.id===tournamentId)) tournamentId=history[0]?.id||null;
   $("#adminTournament").innerHTML=history.map(t=>`<option value="${t.id}">${escapeHtml(t.name)} · ${t.status}</option>`).join("");

@@ -87,6 +87,7 @@ function paintSession() {
   $("#practiceCodeForm").classList.toggle("hidden", !signed);
   $("#practiceForm").classList.toggle("hidden", !signed);
   if (!signed) $("#practiceActive").classList.add("hidden");
+  if (typeof refreshDaily === "function") refreshDaily();
 }
 
 const practiceCodeDrafts = new Map();
@@ -128,15 +129,16 @@ $("#practiceCodeForm").addEventListener("submit", async event => {
 });
 
 function setMode(mode) {
-  const practice = mode === "practice";
-  sessionStorage.setItem("ottv2_mode", practice ? "practice" : "tournament");
-  $("#modeTournament").classList.toggle("active", !practice);
-  $("#modePractice").classList.toggle("active", practice);
-  $("#modeTournament").setAttribute("aria-pressed", String(!practice));
-  $("#modePractice").setAttribute("aria-pressed", String(practice));
-  $$('[data-mode-panel="tournament"]').forEach(panel => panel.classList.toggle("hidden", practice));
-  $$('[data-mode-panel="practice"]').forEach(panel => panel.classList.toggle("hidden", !practice));
-  if (practice) refreshPracticeState();
+  mode = ["tournament", "practice", "daily"].includes(mode) ? mode : "tournament";
+  sessionStorage.setItem("ottv2_mode", mode);
+  for (const name of ["tournament", "practice", "daily"]) {
+    const button = document.querySelector(`[data-mode="${name}"]`);
+    button?.classList.toggle("active", name === mode);
+    button?.setAttribute("aria-pressed", String(name === mode));
+    $$(`[data-mode-panel="${name}"]`).forEach(panel => panel.classList.toggle("hidden", name !== mode));
+  }
+  if (mode === "practice") refreshPracticeState();
+  if (typeof refreshDaily === "function" && mode === "daily") refreshDaily();
 }
 const sidebar = $("#siteSidebar");
 const sidebarToggle = $("#sidebarToggle");
@@ -232,6 +234,14 @@ leaderboardDialog.addEventListener("click", (event) => {
 });
 $("#leaderboardTournament").addEventListener("change",event=>{
   leaderboardTournamentId=Number(event.target.value);
+  refreshLeaderboard();
+});
+$("#leaderboardMode").addEventListener("change", () => {
+  $("#leaderboardBody").replaceChildren();
+  refreshLeaderboard();
+});
+$("#leaderboardDailyDay").addEventListener("change", () => {
+  $("#leaderboardBody").replaceChildren();
   refreshLeaderboard();
 });
 
@@ -462,12 +472,13 @@ async function refreshDashboard() {
       const expired = false;
       const displayStatus = expired ? "expired" : s.status;
       const displayText = expired ? "Hết hạn dự thi" : statusText[s.status] || s.status;
-      return `<tr><td><strong>#${s.id}</strong></td><td>${s.language === "cpp" ? "C++17" : "Python"}</td><td>${dateText(s.created_at)}</td><td><span class="pill ${displayStatus}">${displayText}</span>${s.compile_error ? `<small class="row-error" title="Lỗi biên dịch">${escapeHtml(s.compile_error)}</small>` : ""}</td></tr>`;
+      return `<tr><td><strong>#${s.id}</strong><small class="row-sub">${({daily:"Daily",practice:"Practice",tournament:"Tournament"})[s.mode] || "Tournament"}</small></td><td>${s.language === "cpp" ? "C++17" : "Python"}</td><td>${dateText(s.created_at)}</td><td><span class="pill ${displayStatus}">${displayText}</span>${s.compile_error ? `<small class="row-error" title="Lỗi biên dịch">${escapeHtml(s.compile_error)}</small>` : ""}</td></tr>`;
     }).join("");
     $("#submissionEmpty").classList.toggle("hidden", subs.length > 0);
-    $("#matchesBody").innerHTML = matches.map((m) => `<tr><td><strong>#${m.id}</strong><small class="row-sub">${m.kind === "practice" ? "Practice · " : ""}${escapeHtml(m.event_day || "")}</small></td><td>${escapeHtml(m.opponent)}</td><td><span class="pill ${m.result}">${({ win: "Thắng", loss: "Thua", draw: "Hòa", void: "Hủy do lỗi hệ thống", pending: "Đang chờ", failed: "Lỗi hạ tầng" })[m.result] || m.status}</span>${m.void_reason ? `<small class="row-error">${escapeHtml(m.void_reason)}</small>` : ""}${m.status === "done" ? `<button class="match-replay-link" type="button" data-replay-id="${m.id}">Xem lại trận ↗</button>` : m.kind === "practice" && m.status === "failed" ? `<button class="match-replay-link" type="button" data-practice-retry="${m.id}">Chạy lại Practice ↻</button>` : ""}</td><td>${m.kind === "practice" ? "—" : Number(m.points).toLocaleString("vi-VN")}</td></tr>`).join("");
+    $("#matchesBody").innerHTML = matches.map((m) => `<tr><td><strong>#${m.id}</strong><small class="row-sub">${({practice:"Practice",daily:"Daily",tournament:"Tournament"})[m.kind] || escapeHtml(m.kind)} · ${escapeHtml(m.event_day || "")}</small></td><td>${escapeHtml(m.opponent)}</td><td><span class="pill ${m.result}">${({ win: "Thắng", loss: "Thua", draw: "Hòa", void: "Hủy do lỗi hệ thống", pending: "Đang chờ", failed: "Lỗi hạ tầng" })[m.result] || m.status}</span>${m.void_reason ? `<small class="row-error">${escapeHtml(m.void_reason)}</small>` : ""}${m.status === "done" ? `<button class="match-replay-link" type="button" data-replay-id="${m.id}">Xem lại trận ↗</button>` : m.kind === "practice" && m.status === "failed" ? `<button class="match-replay-link" type="button" data-practice-retry="${m.id}">Chạy lại Practice ↻</button>` : ""}</td><td>${m.kind === "practice" ? "—" : Number(m.points).toLocaleString("vi-VN")}</td></tr>`).join("");
     $("#matchesEmpty").classList.toggle("hidden", matches.length > 0);
     await refreshPracticeState();
+    if (typeof refreshDaily === "function") await refreshDaily();
   } catch (error) {
     if (/token|401/i.test(error.message)) { sessionStorage.removeItem(tokenKey); paintSession(); }
   }
@@ -552,7 +563,24 @@ function escapeHtml(value) {
 
 async function refreshLeaderboard() {
   const requestId = ++leaderboardRequestId;
+  const daily = $("#leaderboardMode").value === "daily";
+  $("#leaderboardTournamentFilter").classList.toggle("hidden", daily);
+  $("#leaderboardDailyFilter").classList.toggle("hidden", !daily);
+  $("#leaderboardColumns").innerHTML = (daily ? ["Hạng", "Đội", "Elo", "Điểm Daily", "Số trận"] : ["Hạng", "Đội", "Số trận", "Trận thắng", "Elo"]).map(text => `<th>${text}</th>`).join("");
+  $("#leaderboardIntro").textContent = daily
+    ? "Daily xếp theo Elo chung với Tournament. Điểm Daily để tham khảo; ngày theo giờ Việt Nam (UTC+7)."
+    : "Chọn giải để xem đội và kết quả riêng của giải đó. Elo trong mỗi giải bắt đầu từ 1000, hệ số điều chỉnh 32; BYE và kết quả hành chính không tính Elo.";
   try {
+    if (daily) {
+      const day = $("#leaderboardDailyDay").value;
+      $("#leaderboardPeriod").textContent = day ? `Daily ngày ${day.split("-").reverse().join("/")}: điểm và số trận trong ngày; Elo chung hiện tại.` : "Toàn bộ trận Daily hợp lệ; xếp theo Elo chung hiện tại.";
+      const rows = await request(`/api/daily/leaderboard${day ? `?day=${encodeURIComponent(day)}` : ""}`);
+      if (requestId !== leaderboardRequestId) return;
+      $("#leaderboardBody").innerHTML = rows.map((r, i) => `<tr><td><span class="rank-badge${i < 3 ? " top" : ""}">${i + 1}</span></td><td><strong>${escapeHtml(r.name)}</strong></td><td><strong>${Number(r.elo).toLocaleString("vi-VN", {maximumFractionDigits: 1})}</strong></td><td>${Number(r.points).toLocaleString("vi-VN")}</td><td>${r.matches}</td></tr>`).join("");
+      $("#leaderboardEmpty").textContent = day ? "Ngày này chưa có kết quả Daily." : "Chưa có kết quả Daily.";
+      $("#leaderboardEmpty").classList.toggle("hidden", rows.length > 0);
+      return;
+    }
     const history=await request("/api/tournaments");
     if(requestId!==leaderboardRequestId)return;
     const select=$("#leaderboardTournament");
@@ -604,6 +632,8 @@ async function init() {
     } catch { sessionStorage.removeItem(tokenKey); sessionStorage.removeItem(teamKey); paintSession(); }
   }
   refreshEventStatus();
+  const replayId = Number(new URLSearchParams(location.search).get("replay"));
+  if (Number.isSafeInteger(replayId) && replayId > 0) openReplay(replayId);
 }
 
 init();

@@ -8,7 +8,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 from .db import SessionLocal, engine
 from .models import Job, Match, Submission, WorkerNode, RoundSubmission, TournamentRound, GameAttempt
-from . import tournament
+from . import tournament, daily
 from .game_setup import coord, new_game, square
 from .game_engine import BEATS, legal_moves, apply_move, position_key, parse_reply, MatchEngine
 from .event_schedule import get_event_state, submission_day_bounds
@@ -48,7 +48,10 @@ def docker_cmd(mode, lang):
     env = JUDGE_ENV.get()
     name = "ott-bot-" + secrets.token_hex(12)
     cmd = sandbox_args() + ["--name", name, env["image"] if env else IMAGE, mode, lang]
-    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
+    # Compilation uses communicate(), which drains both pipes. Preserve Docker
+    # startup errors instead of hiding missing images/socket failures.
+    stderr = subprocess.PIPE if mode == "compile" else subprocess.DEVNULL
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr, bufsize=0)
     proc.sandbox_name = name
     return proc
 
@@ -56,12 +59,13 @@ def compile_submission(db: Session, s: Submission, validate=False):
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     proc = docker_cmd("compile", s.language)
     try:
-        out, _ = proc.communicate(s.source.encode(), timeout=35)
+        out, errors = proc.communicate(s.source.encode(), timeout=35)
     except subprocess.TimeoutExpired:
         stop_bot(proc)
         raise RuntimeError("Worker chờ biên dịch quá 35 giây; cần kiểm tra hạ tầng")
     if not out.strip():
-        raise RuntimeError("Sandbox biên dịch không trả kết quả")
+        detail = errors.decode("utf-8", "replace").strip()[:1500] if errors else "Không có thông tin stderr"
+        raise RuntimeError(f"Sandbox biên dịch không trả kết quả (exit {proc.returncode}): {detail}")
     result = json.loads(out.decode("utf-8", "replace").splitlines()[-1])
     if not result.get("ok"):
         s.status = "failed"; s.compile_error = result.get("error", "Biên dịch thất bại")[:6000]
@@ -298,6 +302,13 @@ def claim(db, instance_token):
             break
         match = db.get(Match, json.loads(job.payload)["match_id"])
         encounter = db.get(tournament.Encounter, match.encounter_id) if match and match.encounter_id else None
+        if match and match.kind == "daily":
+            players = [match.player_a, match.player_b]
+            running = db.scalar(select(Match.id).where(Match.id != match.id, Match.status == "running",
+                Match.kind != "practice", (Match.player_a.in_(players)) | (Match.player_b.in_(players))).limit(1))
+            if running or daily.tournament_busy(db, players):
+                held_jobs.append(job.id)
+                continue
         if not encounter:
             break
         r = db.get(TournamentRound, encounter.round_id)
@@ -359,6 +370,11 @@ def process(job_id, instance_token):
                         round_id = db.get(tournament.Encounter, game.encounter_id).round_id
                     elif game and game.kind == "practice":
                         environment_token = JUDGE_ENV.set(tournament.environment())
+                    elif game and game.kind == "daily":
+                        entry = db.scalar(select(daily.DailyEntry).where(daily.DailyEntry.submission_id == game.submission_a))
+                        if entry is None:
+                            raise RuntimeError("Missing Daily environment snapshot")
+                        environment_token = JUDGE_ENV.set(json.loads(entry.environment))
                 if round_id:
                     if environment_token is not None:
                         JUDGE_ENV.reset(environment_token)
@@ -366,10 +382,13 @@ def process(job_id, instance_token):
                     environment_token = JUDGE_ENV.set(json.loads(db.get(TournamentRound, round_id).environment))
                 elif job.kind == "compile" and payload.get("practice_validation"):
                     environment_token = JUDGE_ENV.set(tournament.environment())
+                elif job.kind == "compile" and payload.get("daily_validation"):
+                    entry = db.scalar(select(daily.DailyEntry).where(daily.DailyEntry.submission_id == payload["submission_id"]))
+                    environment_token = JUDGE_ENV.set(json.loads(entry.environment))
                 if job.kind == "compile":
                     s = db.get(Submission, payload["submission_id"])
                     if s.status not in ("ready", "failed"):
-                        compile_submission(db, s, validate=bool(round_id) or bool(payload.get("practice_validation")))
+                        compile_submission(db, s, validate=bool(round_id) or bool(payload.get("practice_validation")) or bool(payload.get("daily_validation")))
                 elif job.kind == "match":
                     m = db.get(Match, payload["match_id"])
                     if m.status == "done" or m.status == "void":
@@ -402,6 +421,9 @@ def process(job_id, instance_token):
                     if attempt:
                         attempt.status, attempt.detail, attempt.finished_at = m.status, m.detail, datetime.now(timezone.utc)
                     tournament.after_game(db, m)
+                elif m and m.kind == "daily":
+                    daily.after_game(db, m)
+                tournament.pump(db)
     except LostClaim:
         return
     finally:
@@ -441,6 +463,7 @@ def automation_loop(instance_token,stop_event):
                     stop_event.set()
                     return
                 tournament.auto_tick(db)
+                daily.pair(db)
         except OperationalError:
             engine.dispose()
         except Exception:
@@ -496,7 +519,7 @@ def main():
             time.sleep(3)
 
 def create_daily_pairings(day, cutoff=None):
-    # Tournament-only release. Kept callable for old operations scripts.
-    return True
+    with SessionLocal.begin() as db:
+        return daily.pair(db, day.isoformat() if isinstance(day, date) else day)
 
 if __name__ == "__main__": main()

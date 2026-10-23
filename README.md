@@ -2,6 +2,12 @@
 
 **RPS Code Clash • Đấu trường thuật toán Kéo-Búa-Bao** là website để các đội viết bot chơi OTTv2 trên bàn cờ 9×9. Người chơi nộp chương trình Python 3 hoặc C++17; hệ thống kiểm tra bot, xếp trận và lưu kết quả cùng replay.
 
+> **Chế độ hiện tại:** Tournament và Practice hoạt động; Daily đã triển khai, mặc định tắt và được bật tại trang admin. Challenge chưa triển khai.
+>
+> Daily cho phép tối đa 5 lượt nộp bot và 5 trận/ngày/đội theo UTC+7. Đội chọn bot sẵn sàng rồi chủ động tìm trận; nộp bot không tự vào hàng chờ. Bảng Daily xếp theo Elo, điểm Daily để tham khảo.
+>
+> Xem [hướng dẫn Daily](DAILY.md) và [luật thi đấu](GAMERULE.md) để biết chi tiết.
+
 ## Website
 
 | Khu vực | Địa chỉ |

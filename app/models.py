@@ -226,7 +226,8 @@ class OrganizerAction(Base):
 class EloEvent(Base):
     __tablename__ = "tournament_elo_events"
     id: Mapped[int] = mapped_column(primary_key=True)  # immutable rating order
-    encounter_id: Mapped[int] = mapped_column(ForeignKey("tournament_encounters.id"), unique=True)
+    encounter_id: Mapped[int | None] = mapped_column(ForeignKey("tournament_encounters.id"), unique=True, nullable=True)
+    match_id: Mapped[int | None] = mapped_column(ForeignKey("matches.id"), unique=True, nullable=True)
     player_a: Mapped[int] = mapped_column(ForeignKey("players.id"))
     player_b: Mapped[int] = mapped_column(ForeignKey("players.id"))
     active: Mapped[bool] = mapped_column(default=True)
@@ -271,4 +272,50 @@ class PracticeSubmissionRequest(Base):
     submission_id: Mapped[int] = mapped_column(ForeignKey("submissions.id"), unique=True)
     rules_digest: Mapped[str] = mapped_column(String(64))
     environment: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
+class DailyControl(Base):
+    __tablename__ = "daily_control"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    enabled: Mapped[bool] = mapped_column(default=False)
+
+
+class DailyDraw(Base):
+    __tablename__ = "daily_draws"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    day: Mapped[str] = mapped_column(String(10), index=True)
+    choices: Mapped[str] = mapped_column(Text)
+    seed: Mapped[str] = mapped_column(String(64))
+    result: Mapped[str] = mapped_column(Text)
+    method: Mapped[str] = mapped_column(String(80), default="python-random-shuffle-v1")
+    reason: Mapped[str] = mapped_column(String(80), default="daily-pairing-and-sides")
+    actor: Mapped[str] = mapped_column(String(80), default="worker")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
+class DailyEntry(Base):
+    __tablename__ = "daily_entries"
+    __table_args__ = (UniqueConstraint("player_id", "day", "request_key", name="uq_daily_submission_request"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
+    day: Mapped[str] = mapped_column(String(10), index=True)
+    submission_id: Mapped[int] = mapped_column(ForeignKey("submissions.id"), unique=True)
+    request_key: Mapped[str] = mapped_column(String(128))
+    opted_in: Mapped[bool] = mapped_column(default=False)
+    rules_digest: Mapped[str] = mapped_column(String(64))
+    environment: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
+class DailySearch(Base):
+    __tablename__ = "daily_searches"
+    __table_args__ = (UniqueConstraint("player_id", "request_key", name="uq_daily_search_request"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
+    day: Mapped[str] = mapped_column(String(10), index=True)
+    entry_id: Mapped[int] = mapped_column(ForeignKey("daily_entries.id"))
+    request_key: Mapped[str] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(20), default="waiting", index=True)
+    match_id: Mapped[int | None] = mapped_column(ForeignKey("matches.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)

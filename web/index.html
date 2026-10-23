@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" crossorigin="anonymous">
   <script>
     const assetRoot = location.protocol === 'file:' ? '' : '/assets/';
-    for (const [file, version] of [['app.css', '16'], ['status.css', '4'], ['tournament.css', '6'], ['cloudlight.css', '1']]) {
+    for (const [file, version] of [['app.css', '17'], ['status.css', '4'], ['tournament.css', '6'], ['cloudlight.css', '1']]) {
       const stylesheet = document.createElement('link');
       stylesheet.rel = 'stylesheet';
       stylesheet.href = `${assetRoot}${file}?v=${version}`;
@@ -62,6 +62,9 @@
       <button id="modePractice" class="sidebar-link sidebar-mode" type="button" data-mode="practice" aria-label="Practice, Luyện tập với bot mẫu" aria-pressed="false" title="Practice · Luyện tập với bot mẫu">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="7" width="16" height="13" rx="3"/><path d="M9 7V4m6 3V4M8 13h.01M16 13h.01m-6 3h4M2 12h2m16 0h2" /></svg><span><strong>Practice</strong><small>Luyện tập với bot mẫu</small></span>
       </button>
+      <button id="modeDaily" class="sidebar-link sidebar-mode" type="button" data-mode="daily" aria-label="Daily, Thi đấu mỗi ngày" aria-pressed="false" title="Daily · Thi đấu mỗi ngày">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 11h18m-14 5h4"/></svg><span><strong>Daily</strong><small>Thi đấu mỗi ngày</small></span>
+      </button>
       <a class="sidebar-link" href="/local" aria-label="Thử bot cục bộ trên máy bạn" title="Thử bot cục bộ">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4m-5-12 3 2-3 2m6 0h4"/></svg><span><strong>Thử cục bộ</strong><small>Hai bot · Không quota</small></span>
       </a>
@@ -104,6 +107,25 @@
       <div class="wrap">
         <div class="section-heading"><div><div class="eyebrow">KHU VỰC THÍ SINH</div><h2>Đăng ký và thi đấu</h2></div><p>Tạo tài khoản đội để nộp bot. Sau khi đăng nhập, bạn có thể xem trạng thái các lần nộp và lịch sử trận.</p></div>
         <div class="contest-grid">
+        <article id="dailyPanel" class="panel practice-panel hidden" data-mode-panel="daily">
+          <div class="panel-title"><div><div class="eyebrow">DAILY</div><h3>Mỗi ngày một trận</h3></div><span class="file-badge">1 ván · Có điểm và Elo</span></div>
+          <p class="muted">Tối đa 5 lượt nộp và 5 trận/ngày theo giờ Việt Nam (UTC+7). Nộp bot mới giữa các trận; mỗi trận khóa đúng phiên bản đã chọn. Tournament được ưu tiên.</p>
+          <p id="dailyState" role="status" aria-live="polite">Đang tải Daily…</p>
+          <p id="dailyQuota" class="practice-quota" role="status" aria-live="polite"></p>
+          <p id="dailyGuest" class="empty-state">Đăng nhập tài khoản đội để nộp bot Daily.</p>
+          <form id="dailyForm" class="practice-code-form hidden">
+            <label>Ngôn ngữ<select name="language"><option value="python">Python 3</option><option value="cpp">C++17</option></select></label>
+            <label>Mã nguồn bot Daily<textarea name="source" required spellcheck="false"></textarea></label>
+            <p class="muted">Tối đa 100 KB. Bài lỗi code vẫn tính một lượt nộp. Nộp xong chưa tự tìm trận.</p>
+            <button class="button button-blue" type="submit" disabled>Nộp bot Daily</button>
+          </form>
+          <form id="dailySearchForm" class="practice-code-form hidden"><h4>Chọn bot và tìm trận</h4><label>Bot Daily sẵn sàng hôm nay<select id="dailyBotSelect" name="submission_id"><option value="">Chưa có bot sẵn sàng</option></select></label><button id="dailyFind" class="button button-blue" type="submit" disabled>Tìm trận Daily</button><p id="dailySearchHelp" class="muted"></p></form>
+          <details id="dailyBotHistory" class="hidden"><summary>Bài Daily hôm nay</summary><div id="dailyBots"></div></details>
+          <div class="admin-actions"><button id="dailyCancel" class="button button-outline hidden" type="button">Hủy tìm trận</button><button id="dailyRetry" class="button button-outline hidden" type="button">Chạy lại trận lỗi hạ tầng</button><button id="dailyRefresh" class="button button-outline" type="button">Tải lại</button></div>
+          <p id="dailyMessage" role="status" aria-live="polite"></p>
+          <h3>Bảng xếp hạng Daily</h3><p class="muted">Xếp theo Elo chung với Tournament. Điểm Daily hiển thị để tham khảo.</p><label>Lọc đội có trận trong ngày (để trống xem toàn bộ)<input id="dailyDay" type="date"></label>
+          <div class="table-scroll"><table><thead><tr><th>Hạng</th><th>Đội</th><th>Elo</th><th>Điểm Daily</th><th>Số trận</th></tr></thead><tbody id="dailyLeaderboard"></tbody></table></div>
+        </article>
         <article id="tournamentPanel" class="panel" data-mode-panel="tournament">
           <label>Giải hiện tại và lịch sử<select id="tournamentSelect" aria-label="Chọn giải"></select></label>
           <div id="tournamentSummary" aria-live="polite">Đang tải giải…</div>
@@ -170,12 +192,14 @@
   <footer class="footer"><div class="wrap footer-inner"><span>RPS Code Clash • Đấu trường thuật toán Kéo-Búa-Bao</span><a href="/admin">Ban tổ chức</a><a href="#top">Về đầu trang ↑</a></div></footer>
   <dialog id="leaderboardDialog" class="leaderboard-dialog" aria-labelledby="leaderboardTitle">
     <div class="dialog-heading"><div><div class="eyebrow">OTTv2 · KẾT QUẢ THI ĐẤU</div><h2 id="leaderboardTitle">Bảng xếp hạng</h2></div><button id="closeLeaderboard" class="dialog-close" type="button" aria-label="Đóng bảng xếp hạng">×</button></div>
-    <p class="leaderboard-intro">Chọn giải để xem đội và kết quả riêng của giải đó. Elo trong mỗi giải bắt đầu từ 1000, hệ số điều chỉnh 32; BYE và kết quả hành chính không tính Elo.</p>
+    <p id="leaderboardIntro" class="leaderboard-intro">Chọn giải để xem đội và kết quả riêng của giải đó. Elo trong mỗi giải bắt đầu từ 1000, hệ số điều chỉnh 32; BYE và kết quả hành chính không tính Elo.</p>
     <div class="leaderboard-filters" role="group" aria-label="Giải đấu xếp hạng">
-      <label class="leaderboard-tournament">Tournament<select id="leaderboardTournament" aria-label="Giải đấu xếp hạng"><option value="">Đang tải giải…</option></select></label>
+      <label class="leaderboard-tournament">Chế độ<select id="leaderboardMode"><option value="tournament">Tournament</option><option value="daily">Daily</option></select></label>
+      <label id="leaderboardTournamentFilter" class="leaderboard-tournament">Giải<select id="leaderboardTournament" aria-label="Giải đấu xếp hạng"><option value="">Đang tải giải…</option></select></label>
+      <label id="leaderboardDailyFilter" class="leaderboard-day hidden">Ngày Daily (để trống xem toàn bộ)<input id="leaderboardDailyDay" type="date"></label>
     </div>
     <p id="leaderboardPeriod" class="leaderboard-period">Elo từ các encounter hợp lệ trong giải đang chọn.</p>
-    <div class="panel table-panel leaderboard-panel"><div class="table-scroll"><table><thead><tr><th>Hạng</th><th>Đội</th><th>Số trận</th><th>Trận thắng</th><th>Elo</th></tr></thead><tbody id="leaderboardBody"></tbody></table></div><div id="leaderboardEmpty" class="table-empty hidden">Bảng xếp hạng chưa có dữ liệu.</div></div>
+    <div class="panel table-panel leaderboard-panel"><div class="table-scroll"><table><thead><tr id="leaderboardColumns"><th>Hạng</th><th>Đội</th><th>Số trận</th><th>Trận thắng</th><th>Elo</th></tr></thead><tbody id="leaderboardBody"></tbody></table></div><div id="leaderboardEmpty" class="table-empty hidden">Bảng xếp hạng chưa có dữ liệu.</div></div>
   </dialog>
   <dialog id="replayDialog" class="replay-dialog" aria-labelledby="replayTitle">
     <div class="dialog-heading"><div><div class="eyebrow">OTTv2 · PHÁT LẠI TRẬN ĐẤU</div><h2 id="replayTitle">Xem bot thi đấu</h2></div><button id="closeReplay" class="dialog-close" type="button" aria-label="Đóng phát lại">×</button></div>
@@ -244,7 +268,7 @@ def choose_move(state):
     <div id="signedIn" class="signed-in hidden"><div class="signed-avatar">♟</div><div class="signed-copy"><span class="eyebrow">ĐỘI ĐANG ĐĂNG NHẬP</span><h3 id="teamName">—</h3><button id="logoutBtn" class="text-button" type="button">Đăng xuất</button></div></div>
   </dialog>
   <script>
-    for (const [file, version] of [['cloudlight.js', '1'], ['letter-3d-swap.js', '1'], ['app.js', '17'], ['tournament-rounds.js', '1'], ['tournament.js', '7']]) {
+    for (const [file, version] of [['cloudlight.js', '1'], ['letter-3d-swap.js', '1'], ['app.js', '20'], ['daily.js', '2'], ['tournament-rounds.js', '1'], ['tournament.js', '7']]) {
       const script = document.createElement('script');
       script.src = `${assetRoot}${file}?v=${version}`;
       script.async = false;
