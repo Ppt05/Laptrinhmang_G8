@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/app.css?v=7">
-  <link rel="stylesheet" href="/assets/admin.css?v=11">
+  <link rel="stylesheet" href="/assets/admin.css?v=12">
   <link rel="stylesheet" href="/assets/tournament.css?v=3">
 </head>
 <body class="admin-page">
@@ -35,8 +35,11 @@
       <div class="admin-signed-in"><button id="adminRefresh" class="button button-outline" type="button">Tải lại</button><button id="adminLogout" class="text-button" type="button">Đăng xuất</button></div>
       <p id="adminMessage" class="admin-message" aria-live="polite"></p>
       <p id="workersState" class="admin-worker-status" role="status" aria-live="polite"></p>
-      <div class="admin-columns">
-      <div class="admin-column">
+      <div class="admin-mode-tabs" role="tablist" aria-label="Chế độ thi đấu">
+        <button id="adminDailyTab" class="admin-mode-tab" type="button" role="tab" data-admin-mode="daily" aria-controls="adminDailyPanel" aria-selected="true">Daily</button>
+        <button id="adminTournamentTab" class="admin-mode-tab" type="button" role="tab" data-admin-mode="tournament" aria-controls="adminTournamentPanel" aria-selected="false" tabindex="-1">Tournament</button>
+      </div>
+      <div id="adminDailyPanel" role="tabpanel" aria-labelledby="adminDailyTab" tabindex="0">
       <section class="panel admin-panel daily-admin-panel">
         <h2>Daily · Thi đấu mỗi ngày</h2>
         <p class="daily-policy">5 lượt nộp · 5 trận/ngày · UTC+7 · Ưu tiên Tournament</p>
@@ -48,6 +51,10 @@
         <details class="daily-section" open><summary>Các trận Daily gần nhất</summary><div id="dailyAdminMatches"></div><button id="dailyMoreMatches" class="button button-outline hidden" type="button">Xem thêm 10 trận</button></details>
         <details class="daily-section"><summary>Nhật ký ghép và chọn phe</summary><div id="dailyDraws"></div><button id="dailyMoreDraws" class="button button-outline hidden" type="button">Xem thêm nhật ký</button></details>
       </section>
+      </div>
+      <div id="adminTournamentPanel" class="hidden" role="tabpanel" aria-labelledby="adminTournamentTab" tabindex="0">
+      <div class="admin-columns">
+      <div class="admin-column">
       <section class="panel admin-panel">
         <h2>Cấu hình giải</h2>
         <label>Giải hiện tại / lịch sử<select id="adminTournament"></select></label>
@@ -129,10 +136,11 @@
       </section>
       </div>
       </div>
+      </div>
     </section>
   </main>
   <script src="/assets/tournament-rounds.js?v=1" defer></script>
-  <script src="/assets/admin.js?v=27" defer></script>
+  <script src="/assets/admin.js?v=28" defer></script>
   <dialog id="dailyMatchDialog" class="daily-match-dialog"><div class="dialog-heading"><h2>Chi tiết trận Daily</h2><button id="dailyCloseMatch" class="dialog-close" type="button" aria-label="Đóng chi tiết trận">×</button></div><div id="dailyMatchDetails"></div></dialog>
   <script src="/assets/daily-admin.js?v=2" defer></script>
 </body>
