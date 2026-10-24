@@ -8,6 +8,27 @@ let startingBatch = false;
 const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
 const vnDate = value => value ? new Date(value).toLocaleString("vi-VN",{timeZone:"Asia/Ho_Chi_Minh"}) : "—";
 
+function selectAdminMode(mode) {
+  document.querySelectorAll("[data-admin-mode]").forEach(tab=>{
+    const selected=tab.dataset.adminMode===mode;
+    tab.setAttribute("aria-selected",String(selected));
+    tab.tabIndex=selected?0:-1;
+    document.getElementById(tab.getAttribute("aria-controls")).classList.toggle("hidden",!selected);
+  });
+}
+document.querySelectorAll("[data-admin-mode]").forEach(tab=>{
+  tab.addEventListener("click",()=>selectAdminMode(tab.dataset.adminMode));
+  tab.addEventListener("keydown",event=>{
+    if(!["ArrowLeft","ArrowRight","Home","End"].includes(event.key)) return;
+    event.preventDefault();
+    const tabs=[...document.querySelectorAll("[data-admin-mode]")];
+    const index=event.key==="Home"?0:event.key==="End"?tabs.length-1:
+      (tabs.indexOf(tab)+(event.key==="ArrowRight"?1:-1)+tabs.length)%tabs.length;
+    selectAdminMode(tabs[index].dataset.adminMode);
+    tabs[index].focus();
+  });
+});
+
 function setMessage(text,error=false) { $("#adminMessage").textContent=text; $("#adminMessage").classList.toggle("error",error); }
 function setSignedIn(value) { $("#adminLoginPanel").classList.toggle("hidden",value); $("#adminControls").classList.toggle("hidden",!value); }
 function expireSession() {
