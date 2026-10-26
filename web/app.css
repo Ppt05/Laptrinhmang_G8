@@ -271,3 +271,14 @@ main,.footer{margin-left:var(--sidebar-width);transition:margin-left .22s ease}
 #dailyPanel #dailyState{padding:12px;border-radius:8px;background:#eef6ff;color:#315d8d;font-size:12px;line-height:1.7;overflow-wrap:anywhere}
 #dailyPanel #dailyDay{max-width:240px;width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
 #dailyPanel #dailyMessage{font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+
+/* Daily standings: the same pager in the panel and leaderboard dialog. */
+.daily-standing-self{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:16px 0;padding:13px 15px;background:#eef5ff;border:1px solid #dae7f8;border-radius:10px;color:#315d8d;font-size:12px;line-height:1.7}
+.daily-standing-self>span{flex:1;min-width:150px;overflow-wrap:anywhere}
+.daily-standing-pages{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:14px 0 0}
+.daily-standing-pages>p{margin:0;color:var(--muted);font-size:11px;line-height:1.7}
+.daily-standing-pages>div{display:flex;gap:8px}
+.daily-standing-pages button:disabled,.daily-standing-self button:disabled{opacity:.45;cursor:default;transform:none;box-shadow:none}
+.daily-standing-own{background:#edf7ff;box-shadow:inset 3px 0 #2674d9}
+.daily-standing-you{display:block;margin-top:4px;color:#2674d9;font-size:10px;font-weight:600}
+@media(max-width:700px){.daily-standing-self{padding:12px}.daily-standing-self .button{width:100%}.daily-standing-pages{align-items:stretch;flex-direction:column}.daily-standing-pages>div{justify-content:space-between}.daily-standing-pages>div .button{flex:1}.leaderboard-filters{flex-wrap:wrap}}

@@ -78,3 +78,16 @@ Không dùng database local đang chơi hoặc database Render.
 
 Kiểm tra quota, gửi trùng/đồng thời, tìm/hủy, hết ngày UTC+7, snapshot, Elo, retry,
 ưu tiên Tournament, tái đấu/cân bằng phe, nâng cấp giữ dữ liệu và giao diện admin/đội.
+
+## Phân trang bảng xếp hạng Daily
+
+Tab Daily và cửa sổ Bảng xếp hạng chung đều hiển thị 10 đội/trang, giữ hạng toàn bảng.
+Nút Trước/Sau có thông tin phạm vi và tổng số đội. Đổi bộ lọc ngày trở về trang đầu.
+Khi đăng nhập, có thứ hạng riêng và nút Đến vị trí của tôi; đội được tô nổi bật trong bảng.
+Nếu đội chưa có trận hợp lệ trong bộ lọc, hiển thị thông báo thay vì tạo thứ hạng giả.
+
+GET /api/daily/leaderboard dùng offset (mặc định 0), limit (mặc định 10, tối đa 100),
+day tùy chọn và locate_me=true để tới trang của đội đang đăng nhập. Token là tùy chọn;
+khách vẫn xem được bảng công khai, nhưng không có mục me. API trả về object:
+items, total, offset, limit, has_previous, has_next, me, signed_in. Mỗi dòng có rank toàn bảng.
+Việc tổng hợp, xếp hạng và phân trang thực hiện trong database; chỉ trả dữ liệu trang cần xem.
