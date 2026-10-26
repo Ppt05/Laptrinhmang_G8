@@ -5,6 +5,7 @@ let sessionExpiryTimer = null;
 let tournamentId = null;
 let tournament = null;
 let startingBatch = false;
+let knownWorkers = [];
 const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
 const vnDate = value => value ? new Date(value).toLocaleString("vi-VN",{timeZone:"Asia/Ho_Chi_Minh"}) : "—";
 
@@ -117,8 +118,35 @@ function encounterNeedsForce(r, e) {
   return e.status==="provisional" && ((!r.level&&Date.parse(e.appeal_until)>Date.now())||blockingHold(r,e));
 }
 
+function paintRoundExecution() {
+  const r=round();
+  const ended=!r||["finalized","cancelled"].includes(r.status)||["complete","cancelled"].includes(tournament?.status);
+  const form=$("#roundWorkerForm"), select=$("#roundWorker");
+  const key=JSON.stringify([r?.id,r?.worker_id]);
+  const selected=form.dataset.loaded===key?select.value:r?.worker_id||"";
+  const workers=knownWorkers.slice();
+  if(selected&&!workers.some(w=>w.id===selected)) workers.push({id:selected,online:false});
+  select.innerHTML='<option value="">Tự động · worker hỗ trợ điều khiển vòng</option>'+workers.map(w=>
+    `<option value="${escapeHtml(w.id)}" ${!w.online||!(w.round_control_version>=1)?"disabled":""}>${escapeHtml(w.id)} · ${!w.online?"Ngoại tuyến":w.round_control_version>=1?"Trực tuyến":"Cần cập nhật worker"}</option>`).join("");
+  select.value=selected;
+  form.dataset.loaded=key;
+  select.disabled=ended;
+  $("#saveRoundWorker").disabled=ended;
+  $("#pauseRound").disabled=ended||Boolean(r?.paused);
+  $("#pauseRound").classList.toggle("hidden",Boolean(r?.paused));
+  $("#resumeRound").classList.toggle("hidden",!r?.paused||ended);
+  const worker=knownWorkers.find(w=>w.id===r?.worker_id);
+  $("#roundExecutionState").textContent=!r?"Chưa có vòng thi.":r.paused?
+    "Vòng đã dừng. Chọn worker, lưu rồi bấm Tiếp tục vòng. Các hold/khiếu nại khác vẫn được giữ.":
+    r.worker_id?`Worker đã chọn: ${r.worker_id}.${!worker?.online?" Đang chờ worker này trực tuyến; không tự chuyển sang máy khác.":""}`:
+    knownWorkers.some(w=>w.online&&w.round_control_version>=1)?
+    "Tự động chọn worker hỗ trợ điều khiển vòng; worker cũ không được nhận công việc.":
+    "Chưa có worker trực tuyến hỗ trợ điều khiển vòng. Cập nhật và khởi động worker để nhận công việc.";
+}
+
 function paintRound() {
   const r=round();
+  paintRoundExecution();
   $("#roundState").textContent=r ? `${r.level ? tournamentRoundName(tournament, r.level) : "Vòng bảng và phân hạng"} · ${r.status} · ${vnDate(r.opens_at)} – ${vnDate(r.closes_at)} (UTC+7). ${r.level ? "Chốt kết quả ngay khi đủ ván và không có hold; chỉ mở nộp vòng sau khi đủ suất đi tiếp." : `Hạn chốt phân hạng: ${vnDate(r.appeal_until)}`}` : "Chưa xác nhận vòng.";
   const form=$("#windowForm");
   const key=r?`${tournamentId}:${r.id}`:"none";
@@ -142,15 +170,15 @@ function paintRound() {
   if(!r?.level&&entries.some(e=>e.status==="provisional")) reasons.push("Kết quả tạm cần hết 30 phút và không có khiếu nại đang mở.");
   if(tournament?.holds.some(h=>h.appeal_until ? Date.parse(h.appeal_until)>Date.now() : !h.resolved_at)) reasons.push("Có hold hoặc hạn khiếu nại chưa hết; xem nhật ký để lấy ID.");
   $("#roundBlocked").textContent=reasons.join(" ");
-  $("#windowForm button[type=submit]").disabled=r?.status!=="planned";
+  $("#windowForm button[type=submit]").disabled=r?.status!=="planned"||Boolean(r?.paused);
   const roundHeld=blockingHold(r);
   const windowBlocked=Boolean(r&&["planned","submission"].includes(r.status)&&
     (roundHeld||(r.status==="submission"&&(Date.parse(r.opens_at)>Date.now()||Date.parse(r.closes_at)<Date.now()))));
-  $("#forceOpenWindow").classList.toggle("hidden",!windowBlocked);
-  $("#forceOpenWindow").disabled=!windowBlocked;
+  $("#forceOpenWindow").classList.toggle("hidden",!windowBlocked||Boolean(r?.paused));
+  $("#forceOpenWindow").disabled=!windowBlocked||Boolean(r?.paused);
   $("#forceOpenWindow").title=windowBlocked?"Mở nhận bài ngay, dùng giờ đóng trong biểu mẫu; ghi nhật ký force và giải phóng hold liên quan.":"";
   const allResults=entries.every(e=>["provisional","finalized","cancelled"].includes(e.status));
-  const forced={
+  const forced=r?.paused?{}:{
     "open-window":windowBlocked,
     "lock-bots":r?.status==="submission"&&(Date.parse(r.closes_at)>=Date.now()||roundHeld),
     "finalize-encounters":entries.some(e=>encounterNeedsForce(r,e)),
@@ -161,6 +189,7 @@ function paintRound() {
     const action=button.dataset.roundAction||button.dataset.forceRoundAction;
     const allowed={"lock-bots":["submission"],"start-batch":["locked","running"],"qualify":["locked","running"],"finalize":["provisional","locked","running"],"finalize-encounters":["locked","running","provisional"]};
     button.disabled=!r||!allowed[action].includes(r.status)||(action==="qualify"&&r.level!==0);
+    if(r?.paused) button.disabled=true;
     if(action==="start-batch") button.disabled=button.disabled||nextBatch===null||startingBatch;
     if(button.dataset.forceRoundAction) button.classList.toggle("hidden",!forced[action]||button.disabled);
   });
@@ -227,8 +256,10 @@ async function refresh() {
     $("#adminAudit").textContent=JSON.stringify(audit,null,2);
   } else { tournament=null; paintNotices(); }
   const workers=await api("/api/admin/workers");
+  knownWorkers=workers;
   const online=workers.filter(w=>w.online).map(w=>w.id);
   $("#workersState").textContent=`Trực tuyến: ${online.join(", ")||"Không có worker."}`;
+  paintRoundExecution();
 }
 
 function logout() {
@@ -247,6 +278,12 @@ $("#adminLogout").addEventListener("click",logout);
 $("#adminRefresh").addEventListener("click",()=>act(refresh));
 $("#adminTournament").addEventListener("change",event=>{tournamentId=Number(event.target.value); $("#tournamentConfig").dataset.loaded=""; $("#adminRound").replaceChildren(); act(refresh);});
 $("#adminRound").addEventListener("change",paintRound);
+$("#roundWorkerForm").addEventListener("submit",event=>{
+  event.preventDefault();
+  act(()=>api(`${roundRoute()}/worker`,{method:"PUT",body:JSON.stringify({worker_id:$("#roundWorker").value||null})}),"#roundExecutionState");
+});
+$("#pauseRound").addEventListener("click",()=>act(()=>api(`${roundRoute()}/pause`,{method:"POST",body:"{}"}),"#roundExecutionState"));
+$("#resumeRound").addEventListener("click",()=>act(()=>api(`${roundRoute()}/resume`,{method:"POST",body:"{}"}),"#roundExecutionState"));
 $("#tournamentConfig").addEventListener("submit",event=>{event.preventDefault(); act(async()=>{const data=await api("/api/admin/tournaments",{method:"POST",body:JSON.stringify(config())});tournamentId=data.id;});});
 $("#saveConfiguration").addEventListener("click",()=>act(()=>api(`${route()}/configuration`,{method:"PUT",body:JSON.stringify(config())})));
 $("#saveAutomation").addEventListener("click",()=>act(()=>api(`${route()}/automation`,{method:"PUT",body:JSON.stringify({auto_run:$("#tournamentConfig").elements.auto_run.checked,auto_submission_minutes:Number($("#tournamentConfig").elements.auto_submission_minutes.value)})}),"#automationState"));

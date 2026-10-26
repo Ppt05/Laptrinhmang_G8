@@ -18,6 +18,7 @@ from .sandbox_runtime import sandbox_args
 DATA = Path(os.getenv("APP_DATA", "/app/data")); ARTIFACTS = DATA / "artifacts"
 IMAGE = os.getenv("SANDBOX_IMAGE", "oantuti-sandbox:dev")
 JUDGE_ENV = ContextVar("judge_environment", default=None)
+JOB_CHECK = ContextVar("job_ownership_check", default=None)
 WORKER_ID = os.getenv("WORKER_ID", "may-1")
 # OTTv2 tactical board game: coordinates use a1=(0,0), i9=(8,8).
 _PIPE_READERS = weakref.WeakKeyDictionary()
@@ -114,6 +115,8 @@ def read_line_timeout(stream, timeout, pending):
     with selectors.DefaultSelector() as sel:
         sel.register(stream, selectors.EVENT_READ)
         while True:
+            if JOB_CHECK.get():
+                JOB_CHECK.get()()
             newline = pending.find(b"\n")
             if newline >= 0:
                 line = bytes(pending[:newline + 1])
@@ -126,14 +129,18 @@ def read_line_timeout(stream, timeout, pending):
                 if remaining <= 0:
                     return None
                 try:
-                    chunk = _pipe_reader(stream).get(timeout=remaining)
+                    chunk = _pipe_reader(stream).get(timeout=min(remaining, .5) if JOB_CHECK.get() else remaining)
                 except queue.Empty:
+                    if JOB_CHECK.get():
+                        continue
                     return None
                 if chunk is None:
                     return None
             else:
-                if remaining <= 0 or not sel.select(remaining):
+                if remaining <= 0:
                     return None
+                if not sel.select(min(remaining, .5) if JOB_CHECK.get() else remaining):
+                    continue
                 chunk = os.read(stream.fileno(), 256)
             if not chunk:
                 return None
@@ -228,6 +235,8 @@ def play_match(db: Session, m: Match):
     first = {"south": True, "north": True}
     try:
         while (payload := match.observation()) is not None:
+            if JOB_CHECK.get():
+                JOB_CHECK.get()()
             side = payload["side"]
             if side not in processes:
                 started[side] = time.monotonic()
@@ -272,7 +281,7 @@ def play_match(db: Session, m: Match):
 def recover_abandoned_jobs(db):
     """Return work from a dead or replaced worker to the shared queue."""
     now = datetime.now(timezone.utc)
-    jobs = db.scalars(select(Job).where(Job.status == "running")
+    jobs = db.scalars(select(Job).where(Job.status.in_(tournament.RUNNING_JOBS))
                       .order_by(Job.id).with_for_update(skip_locked=True).limit(20)).all()
     for job in jobs:
         node = db.get(WorkerNode, job.worker_id) if job.worker_id else None
@@ -286,7 +295,7 @@ def recover_abandoned_jobs(db):
                 if attempt and attempt.status == "running":
                     attempt.status, attempt.finished_at = "abandoned", now
                     attempt.detail = "Worker heartbeat lost or replaced; original locked configuration retained"
-            job.status = "queued"
+            job.status = "tournament_queued" if job.round_id else "queued"
             job.worker_id = None
             job.claim_token = None
             job.claimed_at = None
@@ -296,9 +305,19 @@ def claim(db, instance_token):
     tournament.serialize(db)
     held_jobs = []
     while True:
-        job = db.scalar(select(Job).where(Job.status == "queued", Job.id.not_in(held_jobs))
+        job = db.scalar(select(Job).where(Job.status.in_(tournament.QUEUED_JOBS), Job.id.not_in(held_jobs))
                         .order_by(Job.priority, Job.id).with_for_update(skip_locked=True).limit(1))
-        if not job or job.kind != "match":
+        if not job:
+            break
+        if job.round_id:
+            r = db.get(TournamentRound, job.round_id)
+            t = db.get(tournament.Tournament, r.tournament_id)
+            if ((r.worker_id is not None and r.worker_id != WORKER_ID) or
+                    (job.kind != "match" and tournament.held(db, t, r)) or
+                    t.status in ("complete", "cancelled")):
+                held_jobs.append(job.id)
+                continue
+        if job.kind != "match":
             break
         match = db.get(Match, json.loads(job.payload)["match_id"])
         encounter = db.get(tournament.Encounter, match.encounter_id) if match and match.encounter_id else None
@@ -317,7 +336,7 @@ def claim(db, instance_token):
             break
         held_jobs.append(job.id)
     if job:
-        job.status = "running"
+        job.status = "tournament_running" if job.round_id else "running"
         job.worker_id = WORKER_ID
         job.claim_token = instance_token
         job.claimed_at = datetime.now(timezone.utc)
@@ -339,14 +358,14 @@ def claim(db, instance_token):
 
 def release_claim(db, job_id, instance_token):
     job = db.scalar(select(Job).where(Job.id == job_id).with_for_update())
-    if job and job.status == "running" and job.claim_token == instance_token:
+    if job and job.status in tournament.RUNNING_JOBS and job.claim_token == instance_token:
         if job.kind == "match":
             attempt = db.scalar(select(GameAttempt).where(GameAttempt.match_id == json.loads(job.payload)["match_id"],
                                                           GameAttempt.attempt == job.attempts))
             if attempt and attempt.status == "running":
                 attempt.status, attempt.finished_at = "abandoned", datetime.now(timezone.utc)
                 attempt.detail = "Claim released after database connection failure"
-        job.status = "queued"
+        job.status = "tournament_queued" if job.round_id else "queued"
         job.worker_id = None
         job.claim_token = None
         job.claimed_at = None
@@ -356,11 +375,26 @@ class LostClaim(Exception):
 
 def process(job_id, instance_token):
     environment_token = None
+    ownership_token = None
     try:
         with SessionLocal.begin() as db:
             job = db.get(Job, job_id)
-            if not job or job.status != "running" or job.claim_token != instance_token:
+            if not job or job.status not in tournament.RUNNING_JOBS or job.claim_token != instance_token:
                 return
+            # Check out-of-band so a stop can revoke a long-running game without
+            # waiting for its transaction, and without accepting a late result.
+            next_check = 0
+            def check_ownership():
+                nonlocal next_check
+                if time.monotonic() < next_check:
+                    return
+                with SessionLocal() as monitor:
+                    current = monitor.get(Job, job_id)
+                    if (not current or current.status not in tournament.RUNNING_JOBS or
+                            current.claim_token != instance_token or current.worker_id != WORKER_ID):
+                        raise LostClaim()
+                next_check = time.monotonic() + 1
+            ownership_token = JOB_CHECK.set(check_ownership)
             try:
                 payload = json.loads(job.payload)
                 round_id = payload.get("round_id")
@@ -396,6 +430,8 @@ def process(job_id, instance_token):
                     else:
                         m.status = "running"; play_match(db, m)
                 job.status = "done"
+            except LostClaim:
+                raise
             except Exception as exc:
                 job.status = "failed"
                 if job.kind == "match":
@@ -404,14 +440,18 @@ def process(job_id, instance_token):
                 elif job.kind == "compile":
                     s = db.get(Submission, json.loads(job.payload).get("submission_id"));
                     if s: s.status = "infrastructure_error"; s.compile_error = str(exc)[:6000]
-            if job.kind == "match":
+            outcome = job.status
+            with db.no_autoflush:
                 tournament.serialize(db)
-            # A recovered job may already belong to another machine. Lock and
-            # re-read its ownership before committing any result or score.
-            current = db.scalar(select(Job).where(Job.id == job_id)
-                                .with_for_update().execution_options(populate_existing=True))
-            if not current or current.claim_token != instance_token or current.worker_id != WORKER_ID:
-                raise LostClaim()
+                # A recovered job may already belong to another machine. Lock
+                # and re-read ownership before committing any result or score.
+                current = db.scalar(select(Job).where(Job.id == job_id)
+                                    .with_for_update().execution_options(populate_existing=True))
+                if (not current or current.status not in tournament.RUNNING_JOBS or
+                        current.claim_token != instance_token or current.worker_id != WORKER_ID):
+                    raise LostClaim()
+            # populate_existing refreshes the job, so restore the computed outcome.
+            current.status = outcome
             current.claim_token = None
             current.claimed_at = None
             if job.kind == "match":
@@ -429,6 +469,8 @@ def process(job_id, instance_token):
     finally:
         if environment_token is not None:
             JUDGE_ENV.reset(environment_token)
+        if ownership_token is not None:
+            JOB_CHECK.reset(ownership_token)
 
 def register_worker(instance_token):
     now = datetime.now(timezone.utc)
@@ -438,8 +480,9 @@ def register_worker(instance_token):
             raise RuntimeError(f"WORKER_ID '{WORKER_ID}' is already active; choose a unique ID for this computer")
         if node:
             node.instance_token, node.last_seen = instance_token, now
+            node.round_control_version = 1
         else:
-            db.add(WorkerNode(id=WORKER_ID, instance_token=instance_token, last_seen=now))
+            db.add(WorkerNode(id=WORKER_ID, instance_token=instance_token, last_seen=now, round_control_version=1))
 
 def heartbeat_loop(instance_token, stop_event):
     while not stop_event.wait(5):

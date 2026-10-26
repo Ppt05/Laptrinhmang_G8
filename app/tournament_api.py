@@ -63,6 +63,10 @@ class CloseInput(BaseModel):
     reason: str = Field(default="", max_length=2000)
 
 
+class WorkerInput(BaseModel):
+    worker_id: str | None = Field(default=None, min_length=1, max_length=64)
+
+
 def organizer(x_admin_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
     # Import at request time avoids a router/main import cycle.
     from .main import require_admin
@@ -244,7 +248,11 @@ def round_action(tid: int, rid: int, action: str, body: ActionInput, actor: str 
         service.serialize(db)
         t, r = service.get_tournament(db, tid), service.get_round(db, tid, rid)
         options = {"force": body.force, "force_reason": body.force_reason}
-        if action == "lock-bots":
+        if action == "pause":
+            service.pause_round(db, t, r, actor)
+        elif action == "resume":
+            service.resume_round(db, t, r, actor)
+        elif action == "lock-bots":
             service.lock_bots(db, t, r, actor, **options)
         elif action == "start-batch":
             batch = service.start_batch(db, t, r, body.batch, actor, **options)
@@ -258,6 +266,15 @@ def round_action(tid: int, rid: int, action: str, body: ActionInput, actor: str 
         else:
             service.check(False, "Thao tác không hợp lệ", 404)
         return {"id": r.id, "status": r.status}
+
+
+@router.put("/api/admin/tournaments/{tid}/rounds/{rid}/worker")
+def select_round_worker(tid: int, rid: int, body: WorkerInput, actor: str = Depends(organizer)):
+    with SessionLocal.begin() as db:
+        service.serialize(db)
+        t, r = service.get_tournament(db, tid), service.get_round(db, tid, rid)
+        service.select_worker(db, t, r, body.worker_id, actor)
+        return {"id": r.id, "worker_id": r.worker_id}
 
 
 @router.post("/api/admin/tournaments/{tid}/rounds/{rid}/exceptions/{kind}")

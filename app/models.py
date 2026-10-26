@@ -27,6 +27,7 @@ class Submission(Base):
 class Job(Base):
     __tablename__ = "jobs"
     id: Mapped[int] = mapped_column(primary_key=True)
+    round_id: Mapped[int | None] = mapped_column(ForeignKey("tournament_rounds.id"), nullable=True, index=True)
     kind: Mapped[str] = mapped_column(String(20))
     priority: Mapped[int] = mapped_column(Integer, default=100, server_default="100")
     payload: Mapped[str] = mapped_column(Text)
@@ -71,6 +72,7 @@ class WorkerNode(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     instance_token: Mapped[str] = mapped_column(String(64))
     last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    round_control_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class Tournament(Base):
@@ -132,6 +134,7 @@ class TournamentRound(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     tournament_id: Mapped[int] = mapped_column(ForeignKey("tournaments.id"), index=True)
     level: Mapped[int] = mapped_column(Integer)  # 0: groups including playoffs
+    worker_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="planned")
     opens_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     closes_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

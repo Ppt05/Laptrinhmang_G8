@@ -2,6 +2,8 @@
 
 ## 1. Hiệu lực và phạm vi áp dụng
 
+Cập nhật điều hành 2026-10-26: BTC có thể dừng/tiếp tục vòng Tournament và chọn worker hỗ trợ điều khiển vòng tại mục 11.1. Dừng giữ ván đã hoàn tất, bỏ kết quả chưa hoàn tất của job bị thu hồi và chạy lại riêng công việc đó khi tiếp tục. Áp dụng cho điều hành đang và sắp diễn ra; không sửa luật bàn cờ, bản chụp, kết quả hoặc replay đã lưu.
+
 Cập nhật Daily 2026-10-23: tối đa 5 lượt nộp bot và 5 trận/ngày/đội; đội chủ động tìm trận bằng một bài Daily sẵn sàng trong ngày. Mỗi trận khóa phiên bản bot riêng. Bảng Daily xếp theo Elo chung, điểm Daily để tham khảo. Chỉ áp dụng cho yêu cầu mới sau nâng cấp; giữ nguyên bản chụp, kết quả và replay đã lưu.
 
 Phiên bản 2026-10-18.4: điều hành loại trực tiếp liên tục, chốt encounter ngay khi đủ ván và không có hold/khiếu nại đang xử lý. Chỉ mở cửa sổ nộp vòng kế tiếp sau khi đủ các suất đi tiếp. Chính sách điều hành này áp dụng cho knockout đang và sắp diễn ra; không sửa kết quả, replay, bản chụp hoặc luật bàn cờ đã lưu. Vòng bảng vẫn giữ hạn khiếu nại 30 phút.
@@ -421,11 +423,13 @@ Sửa kết quả đã tính hoặc chuyển trận thành kết quả hành ch�
 
 ### 11.1. Trách nhiệm vận hành
 
-BTC xác nhận cấu hình, bảng, nhánh, cửa sổ nộp, khóa bot, các mốc chốt kết quả và xử lý sự cố. Worker nhận job từ hàng chờ chung; `WORKER_ID` chỉ là nhãn, không bảo đảm một đội chạy trên một máy cụ thể. Website/API và database có thể ở Render; bot chạy trong Docker của worker nhận job. Không có worker thì job có thể chờ dù website vẫn truy cập được.
+BTC xác nhận cấu hình, bảng, nhánh, cửa sổ nộp, khóa bot, các mốc chốt kết quả và xử lý sự cố. Worker nhận job từ hàng chờ chung; `WORKER_ID` là định danh máy. BTC có thể chọn một worker trực tuyến hỗ trợ điều khiển vòng cho cả kiểm tra bot và các ván của vòng; lựa chọn được kế thừa ở vòng tiếp theo. Mặc định, hệ thống tự chọn worker hỗ trợ điều khiển vòng. Worker cũ không nhận job Tournament mới. Máy đã chọn ngoại tuyến thì công việc chờ máy đó, không tự chuyển sang máy khác. Website/API và database có thể ở Render; bot chạy trong Docker của worker nhận job. Không có worker thì job có thể chờ dù website vẫn truy cập được.
 
 BTC có thể bật **Tự động điều hành khi đến hạn** để ủy quyền worker khóa đăng ký, xác nhận bảng/nhánh đã tính theo luật, mở cửa sổ nộp, khóa bot, chạy các lượt, phân hạng và chốt vòng. Worker dùng các kiểm tra thông thường, không tự force, giữ thời hạn khiếu nại 30 phút ở vòng bảng và không bỏ qua bài đang kiểm tra, hold hoặc lỗi hạ tầng. Loại trực tiếp chạy liên tục trong cùng vòng, kể cả các cặp phụ; kết quả đủ ván được chốt ngay nếu không có hold, không chờ 30 phút tự động. Các thao tác tự động được lưu với người thực hiện `scheduler`; bật/tắt chế độ cũng được ghi nhật ký.
 
 Giờ đã lưu của vòng được giữ nguyên. Với vòng mới chưa có lịch, chế độ tự động mở cửa sổ ngay khi vòng được tạo và đóng sau thời lượng BTC đặt, mặc định 1440 phút. Mỗi vòng loại trực tiếp (tứ kết, bán kết, chung kết hoặc vòng trước đó) có cửa sổ nộp riêng, chỉ mở sau khi mọi suất đi tiếp của vòng trước đã chốt; không mở riêng cho đội thắng sớm. Kế thừa bot tương thích theo mục 7 khi không có bài ready mới. BTC có thể tắt tự động ở bất kỳ giai đoạn hoạt động nào; các ván đã đưa vào hàng chờ vẫn được xử lý. Khi khôi phục worker, hệ thống tiếp tục từ trạng thái đã lưu, không tạo trùng ván hoặc suất đi tiếp.
+
+BTC có thể **Dừng vòng** để ngừng nhận job mới và thu hồi quyền ghi kết quả của job chưa hoàn tất. Giữ nguyên các ván đã hoàn tất, bot khóa, cấu hình và lịch sử lần chạy; kết quả trả muộn từ job bị thu hồi không được tính. Worker mới dừng tiến trình khi kiểm tra thấy quyền đã thu hồi; máy cũ có thể còn tính toán nhưng không được lưu kết quả đó. Chọn/lưu worker khác rồi **Tiếp tục vòng** sẽ chạy lại riêng công việc chưa hoàn tất, không tốn thêm lượt nộp. Không dùng Force để bỏ qua trạng thái dừng. Hold/khiếu nại khác vẫn được giữ; lịch và hạn nộp không tự kéo dài. Không dừng hoặc sửa lựa chọn của vòng đã chốt.
 
 Replay là dựng lại nước đi đã lưu, không phải video hoặc luồng trực tiếp. Bot của đội không cần người chơi trực tuyến khi thi đấu.
 

@@ -24,6 +24,12 @@
 
 ### Tournament
 
+Trong tab **Tournament** của trang BTC, phần **Điều hành vòng thi** có danh sách **Worker chạy vòng này**. Chọn một worker trực tuyến đã cập nhật rồi bấm **Lưu worker**; lựa chọn áp dụng cho kiểm tra bot và các ván của vòng, được kế thừa ở vòng kế tiếp. Mặc định tự chọn giữa các worker hỗ trợ điều khiển vòng. Worker cũ được đánh dấu cần cập nhật và không nhận job Tournament mới. Khi worker đã chọn ngoại tuyến, công việc chờ đúng máy đó, không tự chuyển sang worker khác.
+
+Bấm **Dừng vòng** trước khi đổi worker đang chạy. Hệ thống dừng nhận job mới cho vòng, thu hồi quyền ghi kết quả của job chưa xong, giữ nguyên ván hoàn tất và lịch sử lần chạy. Kết quả trả muộn từ job bị thu hồi không được tính. Chọn và lưu worker mới, rồi bấm **Tiếp tục vòng** để chạy lại riêng công việc chưa hoàn tất bằng bot và cấu hình đã khóa. Hold/khiếu nại khác và lỗi hạ tầng vẫn cần xử lý riêng. Dừng vòng không tự gia hạn cửa sổ nộp hoặc đổi kết quả đã chốt.
+
+Khi nâng cấp, cập nhật API và ít nhất một worker trước khi chạy Tournament. Migration thêm `jobs.round_id`, `tournament_rounds.worker_id` và `worker_nodes.round_control_version`, liên kết job Tournament cũ và bảo vệ job đang chờ khỏi worker cũ. Job đã chạy giữ quyền sở hữu cho tới khi hoàn tất hoặc BTC dừng vòng. Các job Tournament mới dùng `tournament_queued` / `tournament_running`; Daily và Practice giữ hàng đợi hiện có. Marker riêng `worker_queue_guard` ngăn scheduler cũ tạo job không có giới hạn worker; marker không phải khiếu nại và không thể được giải phóng bằng Force. Trước khi rollback, dừng các vòng được điều khiển và giữ nguyên các cột/marker; không bật lại worker cũ cho các vòng đó hoặc chuyển job về hàng đợi chung.
+
 Giải Tournament do ban tổ chức tạo và điều hành. Đội cần đăng ký tài khoản, tham gia giải, rồi nộp bot trong cửa sổ của vòng đang mở. Mỗi đội được nộp tối đa ba lần trong một vòng; ban tổ chức khóa bot dùng cho vòng và điều hành các encounter theo thể thức giải. Kết quả hợp lệ được tính điểm và Elo theo luật giải.
 
 Nộp bot Tournament cần có giải, đội đã tham gia và vòng đang mở. Vì vậy, khi chưa có giải hoặc chưa mở vòng, hãy dùng chế độ Practice để gửi bot và luyện tập.
