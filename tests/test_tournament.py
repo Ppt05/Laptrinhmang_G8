@@ -5,6 +5,7 @@ results here; test_worker_flow exercises the actual Docker judge separately.
 """
 import json
 import os
+import re
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
@@ -90,7 +91,7 @@ class TournamentTests(unittest.TestCase):
                 m.points_a, m.points_b = score, 1-score
                 m.winner_id = m.player_a if score == 1 else m.player_b if score == 0 else None
                 m.status, m.detail = "done", '{"turns":[],"win_reason":"deterministic_test"}'
-                for job in self.db.scalars(select(Job).where(Job.kind == "match", Job.status == "queued")):
+                for job in self.db.scalars(select(Job).where(Job.kind == "match", Job.status.in_(s.QUEUED_JOBS))):
                     if json.loads(job.payload)["match_id"] == m.id:
                         job.status = "done"
                 self.db.flush()
@@ -664,7 +665,7 @@ class TournamentTests(unittest.TestCase):
             with self.Session.begin() as db:
                 # Discard fixture compilation jobs, then exercise actual claim.
                 for j in db.scalars(select(Job).where(Job.kind=="compile")):j.status="done"
-                for j in db.scalars(select(Job).where(Job.kind=="match",Job.status=="queued")):
+                for j in db.scalars(select(Job).where(Job.kind=="match",Job.status.in_(s.QUEUED_JOBS))):
                     if json.loads(j.payload)["match_id"] != mid:j.status="done"
                 job=worker.claim(db,"owner")
                 jid=job.id
@@ -687,7 +688,7 @@ class TournamentTests(unittest.TestCase):
             self.db.add(WorkerNode(id="test-worker",instance_token="new",last_seen=s.utcnow()))
             self.db.flush()
             worker.recover_abandoned_jobs(self.db)
-            self.assertEqual(job.status,"queued")
+            self.assertEqual(job.status,"tournament_queued")
             attempt=self.db.scalar(select(GameAttempt).where(GameAttempt.match_id==json.loads(job.payload)["match_id"]))
             self.assertEqual(attempt.status,"abandoned")
             new=worker.claim(self.db,"new")
@@ -695,7 +696,7 @@ class TournamentTests(unittest.TestCase):
             self.assertEqual(new.attempts,2)
             jid=job.id
             worker.release_claim(self.db,jid,"new")
-            self.assertEqual(job.status,"queued")
+            self.assertEqual(job.status,"tournament_queued")
             second_attempt=self.db.scalar(select(GameAttempt).where(GameAttempt.match_id==attempt.match_id,GameAttempt.attempt==2))
             self.assertEqual(second_attempt.status,"abandoned")
             worker.claim(self.db,"new")
@@ -711,7 +712,7 @@ class TournamentTests(unittest.TestCase):
         self.ready_round(t,r)
         s.start_batch(self.db,t,r,1,"admin")
         target=self.db.scalar(select(Match).where(Match.status=="queued").order_by(Match.id))
-        for j in self.db.scalars(select(Job).where(Job.status=="queued")):
+        for j in self.db.scalars(select(Job).where(Job.status.in_(s.QUEUED_JOBS))):
             if j.kind!="match" or json.loads(j.payload)["match_id"]!=target.id:j.status="done"
         mid,tid,rid=target.id,t.id,r.id
         self.db.commit()
@@ -1094,7 +1095,7 @@ class TournamentTests(unittest.TestCase):
             conn.execute(text(f"DROP SCHEMA IF EXISTS {schema_name} CASCADE"))
             conn.execute(text(f"CREATE SCHEMA {schema_name}"))
         migration_engine=create_engine(os.environ["TEST_DATABASE_URL"],connect_args={"options":f"-csearch_path={schema_name}"})
-        # Exact old table definitions, omitting the two new Match columns.
+        # Old table definitions omit the Tournament links on jobs and matches.
         from sqlalchemy.schema import CreateTable
         with migration_engine.begin() as conn:
             for name in ("players","submissions","jobs","matches"):
@@ -1107,10 +1108,13 @@ class TournamentTests(unittest.TestCase):
                     table._columns.remove(table.c.game_number)
                 # Foreign-key targets resolve against the full metadata.
                 sql=str(CreateTable(Base.metadata.tables[name]).compile(migration_engine))
+                if name=="jobs":
+                    sql="\n".join(line for line in sql.splitlines() if "round_id" not in line).replace(",\n)","\n)")
                 if name=="matches":
                     lines=sql.splitlines()
                     lines=[line for line in lines if not any(word in line for word in ("encounter_id","game_number","uq_encounter_game"))]
                     sql="\n".join(lines).replace(",\n)","\n)")
+                sql=re.sub(r",\s*\)", "\n)", sql)
                 conn.execute(text(sql))
             conn.execute(text("INSERT INTO players (id,name,token_hash,created_at) VALUES (1,'Legacy A','hash',now()),(2,'Legacy B','hash',now())"))
             conn.execute(text("INSERT INTO submissions (id,player_id,language,source,status,created_at) VALUES (1,1,'python','legacy source','ready',now()),(2,2,'python','pass','ready',now())"))

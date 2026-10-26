@@ -213,7 +213,8 @@ def admin_set_event(body: EventScheduleInput, x_admin_key: str | None = Header(d
 def admin_workers(x_admin_key: str | None = Header(default=None), authorization: str | None = Header(default=None)):
     require_admin(x_admin_key, authorization)
     with SessionLocal() as db:
-        return [{"id": node.id, "online": worker_online(node), "last_seen": node.last_seen.isoformat()}
+        return [{"id": node.id, "online": worker_online(node), "last_seen": node.last_seen.isoformat(),
+                 "round_control_version": node.round_control_version}
                 for node in db.scalars(select(WorkerNode).order_by(WorkerNode.id)).all()]
 
 @app.get("/api/admin/matches")

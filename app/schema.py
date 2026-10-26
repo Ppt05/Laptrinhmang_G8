@@ -43,3 +43,24 @@ def ensure_schema():
         connection.execute(text("ALTER TABLE daily_entries DROP CONSTRAINT IF EXISTS uq_daily_entry_day"))
         connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_daily_submission_request ON daily_entries (player_id, day, request_key)"))
         connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_daily_waiting_team ON daily_searches (player_id) WHERE status = 'waiting'"))
+        connection.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS round_id INTEGER REFERENCES tournament_rounds(id)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_jobs_round_id ON jobs (round_id)"))
+        connection.execute(text("ALTER TABLE tournament_rounds ADD COLUMN IF NOT EXISTS worker_id VARCHAR(64)"))
+        connection.execute(text("ALTER TABLE worker_nodes ADD COLUMN IF NOT EXISTS round_control_version INTEGER NOT NULL DEFAULT 0"))
+        # Old workers only claim 'queued' jobs. Keep controlled tournament work
+        # out of that queue, including after a restart or ownership recovery.
+        connection.execute(text("""UPDATE jobs j SET round_id=s.round_id
+            FROM tournament_submissions s WHERE j.round_id IS NULL AND j.kind='compile'
+            AND j.payload::jsonb->>'submission_id'=s.submission_id::text"""))
+        connection.execute(text("""UPDATE jobs j SET round_id=e.round_id
+            FROM matches m JOIN tournament_encounters e ON e.id=m.encounter_id
+            WHERE j.round_id IS NULL AND j.kind='match'
+            AND j.payload::jsonb->>'match_id'=m.id::text"""))
+        connection.execute(text("UPDATE jobs SET status='tournament_queued' WHERE round_id IS NOT NULL AND status='queued'"))
+        # Previous tournament schedulers understand holds but not worker routing.
+        # This private guard stops them from creating legacy, unrestricted jobs.
+        connection.execute(text("""INSERT INTO tournament_actions
+            (tournament_id,actor,kind,evidence,hold,created_at)
+            SELECT t.id,'migration','worker_queue_guard','{}',TRUE,now() FROM tournaments t
+            WHERE t.status NOT IN ('complete','cancelled') AND NOT EXISTS
+            (SELECT 1 FROM tournament_actions a WHERE a.tournament_id=t.id AND a.kind='worker_queue_guard')"""))

@@ -2,6 +2,11 @@
 .admin-wrap{width:min(1480px,calc(100% - 36px));margin:64px auto 90px}
 .admin-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;align-items:start}
 .admin-column{min-width:0}
+.admin-mode-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;max-width:380px;padding:5px;margin:0 0 24px;background:#e7edf5;border:1px solid var(--line);border-radius:12px}
+.admin-mode-tab{min-height:44px;padding:10px 20px;border:0;border-radius:8px;background:transparent;color:#526981;font:inherit;font-size:14px;font-weight:700;cursor:pointer}
+.admin-mode-tab[aria-selected="true"]{background:#fff;color:var(--navy);box-shadow:0 1px 5px #10294b14}
+.admin-mode-tab:hover{color:var(--navy)}
+.admin-mode-tab:focus-visible{outline:3px solid #75a9eb;outline-offset:2px}
 .admin-wrap h1{font-size:clamp(30px,5vw,42px);letter-spacing:-1.5px;color:var(--navy);margin:8px 0 10px}
 .admin-lead{font-size:14px;line-height:1.8;color:var(--muted);max-width:620px;margin-bottom:28px}
 .admin-panel{padding:clamp(20px,4vw,34px)}

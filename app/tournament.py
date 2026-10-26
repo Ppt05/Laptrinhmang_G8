@@ -22,7 +22,89 @@ from sqlalchemy.exc import OperationalError
 from .models import (Tournament, Enrollment, TournamentGroup, GroupMember,
                      TournamentRound, RoundSubmission, LockedBot, Encounter,
                      RecordedDraw, OrganizerAction, EloEvent, GameAttempt,
-                     Player, Submission, Match, Job)
+                     Player, Submission, Match, Job, WorkerNode)
+
+QUEUED_JOBS = ("queued", "tournament_queued")
+RUNNING_JOBS = ("running", "tournament_running")
+ACTIVE_JOBS = QUEUED_JOBS + RUNNING_JOBS
+QUEUE_GUARD = "worker_queue_guard"
+
+
+def round_paused(db, r):
+    return bool(db.scalar(select(OrganizerAction.id).where(OrganizerAction.round_id == r.id,
+        OrganizerAction.kind == "pause_round", OrganizerAction.hold.is_(True),
+        OrganizerAction.resolved_at.is_(None)).limit(1)))
+
+
+def round_job(r, kind, payload):
+    return Job(kind=kind, round_id=r.id, priority=0, status="tournament_queued", payload=dump(payload))
+
+
+def control_round(db, t, r):
+    check(t.status not in ("complete", "cancelled") and r.status not in ("finalized", "cancelled"),
+          "Vòng hoặc giải đã kết thúc")
+
+
+def select_worker(db, t, r, worker_id, actor):
+    control_round(db, t, r)
+    if worker_id is not None:
+        node = db.get(WorkerNode, worker_id)
+        check(node and node.round_control_version >= 1, "Worker chưa hỗ trợ điều khiển vòng; cần cập nhật worker", 400)
+        check(node.last_seen >= utcnow() - timedelta(seconds=30), "Worker đang ngoại tuyến", 409)
+    if worker_id == r.worker_id:
+        return
+    check(not db.scalar(select(Job.id).where(Job.round_id == r.id, Job.status.in_(RUNNING_JOBS)).limit(1)),
+          "Dừng vòng trước khi đổi worker đang chạy")
+    before = r.worker_id
+    r.worker_id = worker_id
+    audit(db, t, "select_worker", {"before": before, "worker_id": worker_id}, actor, r)
+
+
+def pause_round(db, t, r, actor):
+    control_round(db, t, r)
+    if round_paused(db, r):
+        return
+    try:
+        jobs = db.scalars(select(Job).where(Job.round_id == r.id, Job.status.in_(ACTIVE_JOBS))
+            .order_by(Job.id).with_for_update(nowait=True).execution_options(populate_existing=True)).all()
+    except OperationalError as error:
+        if getattr(error.orig, "sqlstate", None) == "55P03":
+            raise HTTPException(409, "Worker đang lưu kết quả; thử dừng lại sau") from error
+        raise
+    for job in jobs:
+        payload = json.loads(job.payload)
+        if job.kind == "match":
+            match = db.get(Match, payload["match_id"])
+            attempt = db.scalar(select(GameAttempt).where(GameAttempt.match_id == match.id,
+                                                         GameAttempt.attempt == job.attempts))
+            if attempt and attempt.status == "running":
+                attempt.status, attempt.finished_at = "abandoned", utcnow()
+                attempt.detail = "Round stopped by organizer; unfinished result discarded"
+            if match.status != "done":
+                match.status, match.worker_id, match.detail, match.winner_id = "scheduled", None, None, None
+                match.points_a = match.points_b = 0
+        job.status, job.worker_id, job.claim_token, job.claimed_at = "cancelled", None, None, None
+    audit(db, t, "pause_round", {"cancelled_jobs": [j.id for j in jobs]}, actor, r, hold=True)
+    t.auto_status = "Đã dừng vòng; chọn worker rồi bấm Tiếp tục vòng."
+
+
+def resume_round(db, t, r, actor):
+    control_round(db, t, r)
+    if not round_paused(db, r):
+        return
+    for action in db.scalars(select(OrganizerAction).where(OrganizerAction.round_id == r.id,
+            OrganizerAction.kind == "pause_round", OrganizerAction.resolved_at.is_(None))):
+        action.resolved_at = utcnow()
+    db.flush()
+    # Compilation that was interrupted keeps the same submission and quota slot.
+    for link in db.scalars(select(RoundSubmission).where(RoundSubmission.round_id == r.id)):
+        submission = db.get(Submission, link.submission_id)
+        if submission.status in ("queued", "running"):
+            db.add(round_job(r, "compile", {"submission_id": submission.id, "round_id": r.id}))
+    audit(db, t, "resume_round", {"worker_id": r.worker_id}, actor, r)
+    t.auto_status = None
+    db.flush()
+    pump(db)
 
 
 def dump(value):
@@ -115,7 +197,7 @@ def remove_notices(db, t, actor, notice_id=None):
 
 def held(db, t, r=None, e=None):
     rows = db.scalars(select(OrganizerAction).where(
-        OrganizerAction.tournament_id == t.id,
+        OrganizerAction.tournament_id == t.id, OrganizerAction.kind != QUEUE_GUARD,
         ((OrganizerAction.hold.is_(True) & OrganizerAction.resolved_at.is_(None)) |
          (OrganizerAction.appeal_until > utcnow())))).all()
     return any((a.round_id is None or r is None or a.round_id == r.id) and
@@ -128,6 +210,8 @@ def force_stage(db, t, actor, action, r=None, reason="", encounter_ids=None, bef
     now = utcnow()
     released = []
     for entry in db.scalars(select(OrganizerAction).where(OrganizerAction.tournament_id == t.id)):
+        if entry.kind in (QUEUE_GUARD, "pause_round"):
+            continue
         if r and entry.round_id not in (None, r.id):
             continue
         if encounter_ids is not None and entry.encounter_id is not None and entry.encounter_id not in encounter_ids:
@@ -188,6 +272,7 @@ def create(db, data, actor):
     db.add(t)
     db.flush()
     audit(db, t, "create", data, actor)
+    audit(db, t, QUEUE_GUARD, {}, actor, hold=True)
     return t
 
 
@@ -204,11 +289,11 @@ def close_tournament(db, t, actor, reason=""):
     match_ids = {m.id for m in matches}
     submission_ids = set(db.scalars(select(RoundSubmission.submission_id).where(RoundSubmission.round_id.in_(round_ids))))
     job_ids = []
-    for job in db.scalars(select(Job).where(Job.status.in_(["queued", "running"]))):
+    for job in db.scalars(select(Job).where(Job.status.in_(ACTIVE_JOBS))):
         payload = json.loads(job.payload)
         if ((job.kind == "match" and payload.get("match_id") in match_ids) or
                 (job.kind == "compile" and payload.get("submission_id") in submission_ids)):
-            check(job.status != "running", "Đợi worker hoàn tất công việc đang chạy rồi đóng giải")
+            check(job.status not in RUNNING_JOBS, "Đợi worker hoàn tất công việc đang chạy rồi đóng giải")
             job_ids.append(job.id)
     # Claims do not use the organizer lock. Lock queued jobs without waiting:
     # a worker may have claimed one since the read above, or be saving results.
@@ -219,10 +304,10 @@ def close_tournament(db, t, actor, reason=""):
         if getattr(error.orig, "sqlstate", None) == "55P03":
             raise HTTPException(409, "Worker đang nhận hoặc lưu công việc; thử đóng giải lại sau") from error
         raise
-    check(not any(job.status == "running" for job in jobs), "Đợi worker hoàn tất công việc đang chạy rồi đóng giải")
+    check(not any(job.status in RUNNING_JOBS for job in jobs), "Đợi worker hoàn tất công việc đang chạy rồi đóng giải")
     cancelled_ids = []
     for job in jobs:
-        if job.status == "queued":
+        if job.status in QUEUED_JOBS:
             job.status = "cancelled"
             cancelled_ids.append(job.id)
     for submission in db.scalars(select(Submission).where(Submission.id.in_(submission_ids),
@@ -423,7 +508,7 @@ def submit(db, t, r, pid, language, source, request_key, now=None):
     db.flush()
     entry = RoundSubmission(round_id=r.id, player_id=pid, submission_id=s.id, attempt=used + 1, request_key=request_key)
     db.add(entry)
-    db.add(Job(kind="compile", priority=0, payload=dump({"submission_id": s.id, "round_id": r.id})))
+    db.add(round_job(r, "compile", {"submission_id": s.id, "round_id": r.id}))
     return entry
 
 
@@ -468,9 +553,9 @@ def administrative(db, t, r, e, a_ok, b_ok, reason):
         check(m.status != "running", "Đợi ván đang chạy kết thúc trước khi áp dụng quyết định")
         if m.status in ("scheduled", "queued", "failed"):
             m.status = "void"
-            for j in db.scalars(select(Job).where(Job.kind == "match", Job.status.in_(["queued", "running"])).with_for_update()):
+            for j in db.scalars(select(Job).where(Job.kind == "match", Job.status.in_(ACTIVE_JOBS)).with_for_update()):
                 if json.loads(j.payload).get("match_id") == m.id:
-                    check(j.status != "running", "Worker đang giữ ván; đợi worker trả kết quả")
+                    check(j.status not in RUNNING_JOBS, "Worker đang giữ ván; đợi worker trả kết quả")
                     j.status = "cancelled"
     publish(e, r)
     rate(db, e)
@@ -614,7 +699,7 @@ def pump(db):
         next_game = next((m for m in rows if m.status != "done"), None)
         if next_game and next_game.status == "scheduled":
             next_game.status = "queued"
-            db.add(Job(kind="match", priority=0, payload=dump({"match_id": next_game.id})))
+            db.add(round_job(r, "match", {"match_id": next_game.id}))
 
 
 def aggregate(db, e, actor="worker"):
@@ -835,7 +920,8 @@ def confirm_bracket(db, t, actor, *, force=False, force_reason=""):
                   "bye": False, "encounter_id": None} for i in range(0, size, 2)]
         t.bracket = dump({"seeds": seeds, "size": size, "levels": {"1": nodes}})
         t.status = "knockout"
-        db.add(TournamentRound(tournament_id=t.id, level=1, rules_digest=t.rules_digest, environment=t.environment))
+        db.add(TournamentRound(tournament_id=t.id, level=1, rules_digest=t.rules_digest,
+                               environment=t.environment, worker_id=r.worker_id))
     audit(db, t, "confirm_bracket", {"seeds": seeds}, actor)
 
 
@@ -871,7 +957,8 @@ def finalize_round(db, t, r, actor, now=None, *, force=False, force_reason=""):
             bracket["levels"][str(r.level + 1)] = [
                 {"slot": i//2, "a": winners[i], "b": winners[i+1], "winner": None,
                  "bye": False, "encounter_id": None} for i in range(0, len(winners), 2)]
-            db.add(TournamentRound(tournament_id=t.id, level=r.level + 1, rules_digest=r.rules_digest, environment=r.environment))
+            db.add(TournamentRound(tournament_id=t.id, level=r.level + 1, rules_digest=r.rules_digest,
+                                   environment=r.environment, worker_id=r.worker_id))
         t.bracket = dump(bracket)
     r.status = "finalized"
     audit(db, t, "finalize_round", {}, actor, r)
@@ -899,7 +986,7 @@ def exception(db, t, r, kind, data, actor):
     if kind in ("hold", "decision"):
         if kind == "decision":
             prior = db.get(OrganizerAction, data.get("action_id"))
-            check(prior and prior.tournament_id == t.id and prior.hold and not prior.resolved_at, "Không tìm thấy khiếu nại đang mở", 404)
+            check(prior and prior.tournament_id == t.id and prior.kind not in (QUEUE_GUARD, "pause_round") and prior.hold and not prior.resolved_at, "Không tìm thấy khiếu nại đang mở", 404)
             prior.resolved_at = utcnow()
         action = audit(db, t, kind, data, actor, r, e, hold=kind == "hold")
         db.flush()
@@ -912,7 +999,7 @@ def exception(db, t, r, kind, data, actor):
                                                        RoundSubmission.submission_id == data.get("submission_id")))
         check(link and s and s.status == "infrastructure_error" and r.status == "submission", "Không có lỗi hạ tầng biên dịch để retry")
         s.status, s.compile_error = "queued", None
-        db.add(Job(kind="compile", priority=0, payload=dump({"submission_id": s.id, "round_id": r.id})))
+        db.add(round_job(r, "compile", {"submission_id": s.id, "round_id": r.id}))
     elif kind == "forfeit":
         check(e and r.status != "finalized", "Cần trận chưa chốt vòng")
         losers = data.get("player_ids", [])
@@ -981,9 +1068,9 @@ def exception(db, t, r, kind, data, actor):
                 affected = games(db, encounter)
                 check(not any(m.status == "running" for m in affected), "Đợi worker kết thúc job đang chạy")
                 ids = {m.id for m in affected}
-                for job in db.scalars(select(Job).where(Job.kind == "match", Job.status.in_(["queued", "running"])).with_for_update()):
+                for job in db.scalars(select(Job).where(Job.kind == "match", Job.status.in_(ACTIVE_JOBS)).with_for_update()):
                     if json.loads(job.payload)["match_id"] in ids:
-                        check(job.status != "running", "Đợi worker kết thúc job đang chạy")
+                        check(job.status not in RUNNING_JOBS, "Đợi worker kết thúc job đang chạy")
                         job.status = "cancelled"
                 for m in affected:
                     if m.status != "done":
@@ -1014,6 +1101,10 @@ def _automation_step(db,t,now):
     if t.status in ("complete","cancelled"):
         return False,"Giải đã kết thúc."
     if held(db,t):
+        paused = db.scalar(select(TournamentRound).where(TournamentRound.tournament_id == t.id,
+            TournamentRound.status.not_in(("finalized", "cancelled"))).order_by(TournamentRound.level.desc()).limit(1))
+        if paused and round_paused(db, paused):
+            return False,"Đã dừng vòng; chọn worker rồi bấm Tiếp tục vòng."
         return False,"Tạm dừng tự động: còn hold hoặc khiếu nại chưa giải quyết."
     if t.status=="registration":
         if now<=t.registration_close:
@@ -1191,6 +1282,7 @@ def public_view(db, t):
                     "frozen_elo": e.frozen_elo} for e in db.scalars(select(Enrollment).where(Enrollment.tournament_id == t.id))],
         "rounds": [{"id": r.id, "level": r.level, "status": r.status, "opens_at": r.opens_at,
                     "closes_at": r.closes_at, "appeal_until": r.appeal_until,
+                    "worker_id": r.worker_id, "paused": round_paused(db, r),
                     "rules_digest": r.rules_digest, "environment": json.loads(r.environment)} for r in rounds],
         "groups": groups, "encounters": encounters,
         "bracket": json.loads(t.bracket) if t.bracket else None,
@@ -1200,7 +1292,7 @@ def public_view(db, t):
         "holds": [{"id": a.id, "round_id": a.round_id, "encounter_id": a.encounter_id,
                    "actor": a.actor, "created_at": a.created_at, "resolved_at": a.resolved_at,
                    "reason": json.loads(a.evidence).get("reason"), "appeal_until": a.appeal_until}
-                  for a in actions if a.hold or a.appeal_until],
+                  for a in actions if a.kind != QUEUE_GUARD and (a.hold or a.appeal_until)],
         "draws": [{"key": d.key, "reason": d.reason, "choices": json.loads(d.choices), "method": d.method,
                    "seed": d.seed, "result": json.loads(d.result), "actor": d.actor, "created_at": d.created_at}
                   for d in db.scalars(select(RecordedDraw).where(RecordedDraw.tournament_id == t.id))]}

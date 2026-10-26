@@ -47,7 +47,7 @@ class AutomationTests(unittest.TestCase):
         match.status,match.points_a,match.points_b="done",score,1-score
         match.winner_id=match.player_a if score==1 else match.player_b if score==0 else None
         match.detail='{"turns":[],"win_reason":"deterministic_test"}'
-        for job in self.db.scalars(select(Job).where(Job.kind=="match",Job.status=="queued")):
+        for job in self.db.scalars(select(Job).where(Job.kind=="match",Job.status.in_(s.QUEUED_JOBS))):
             if json.loads(job.payload)["match_id"]==match.id:job.status="done"
         with patch.object(s,"utcnow",return_value=now):s.after_game(self.db,match)
         self.db.flush()
@@ -119,7 +119,7 @@ class AutomationTests(unittest.TestCase):
         s.audit(self.db,t,"hold",{},"admin",r,hold=True);self.db.flush()
         self.tick(now);self.assertEqual(r.status,"locked")
         self.assertIn("hold",t.auto_status)
-        hold=self.db.scalar(select(OrganizerAction).where(OrganizerAction.hold.is_(True)))
+        hold=self.db.scalar(select(OrganizerAction).where(OrganizerAction.kind=="hold",OrganizerAction.hold.is_(True)))
         self.assertIsNone(hold.resolved_at)
         hold.resolved_at=now;self.tick(now)
         while (match:=self.db.scalar(select(Match).where(Match.status=="queued").limit(1))):
