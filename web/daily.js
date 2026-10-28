@@ -3,6 +3,7 @@ let dailySubmitting=false, dailySearching=false, dailyRefreshVersion=0;
 const dailyDrafts=new Map();
 let dailyLanguage='python';
 const dailyForm=document.querySelector('#dailyForm');
+const panelDailyLeaderboard = new DailyLeaderboard({body: '#dailyLeaderboard', day: '#dailyDay', prefix: 'dailyStanding'});
 dailyForm.elements.source.value=botTemplates.python;
 dailyForm.elements.language.addEventListener('change',event=>{
   dailyDrafts.set(dailyLanguage,dailyForm.elements.source.value);
@@ -18,10 +19,8 @@ async function refreshDaily() {
   $('#dailyCancel').classList.add('hidden'); $('#dailyRetry').classList.add('hidden');
   if(!signed) { dailyState=null; $('#dailyQuota').textContent=''; $('#dailyBots').textContent=''; }
   try {
-    const day=$('#dailyDay').value;
-    const [rows,s]=await Promise.all([request(`/api/daily/leaderboard${day ? `?day=${encodeURIComponent(day)}` : ''}`),request(signed ? '/api/daily/state' : '/api/meta')]);
+    const [,s]=await Promise.all([panelDailyLeaderboard.refresh(),request(signed ? '/api/daily/state' : '/api/meta')]);
     if(version!==dailyRefreshVersion || token()!==session) return;
-    $('#dailyLeaderboard').innerHTML=rows.length ? rows.map((r,i)=>`<tr><td>${i+1}</td><td>${escapeHtml(r.name)}</td><td><strong>${Number(r.elo).toFixed(1)}</strong></td><td>${r.points}</td><td>${r.matches}</td></tr>`).join('') : '<tr><td colspan="5">Chưa có kết quả Daily.</td></tr>';
     if(!signed) { $('#dailyState').textContent=s.modes.daily ? 'Daily đang mở. Đăng nhập để tham gia.' : 'Daily đang tắt. BTC có thể bật trong trang quản trị.'; return; }
     dailyState=s;
     const parts=[`Ngày ${s.day} (UTC+7)`,s.enabled ? 'Daily đang mở' : 'Daily đang tắt'];
@@ -75,5 +74,5 @@ async function dailyAction(url,method='POST') {
 $('#dailyCancel').addEventListener('click',()=>dailyAction('/api/daily/queue','DELETE'));
 $('#dailyRetry').addEventListener('click',()=>dailyState?.match && dailyAction(`/api/daily/matches/${dailyState.match.id}/retry`));
 $('#dailyBots').addEventListener('click',event=>{const b=event.target.closest('[data-daily-compile-retry]');if(b) dailyAction(`/api/daily/submissions/${b.dataset.dailyCompileRetry}/retry`);});
-$('#dailyRefresh').addEventListener('click',refreshDaily); $('#dailyDay').addEventListener('change',refreshDaily);
+$('#dailyRefresh').addEventListener('click',refreshDaily);
 refreshDaily();

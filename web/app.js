@@ -88,6 +88,7 @@ function paintSession() {
   $("#practiceForm").classList.toggle("hidden", !signed);
   if (!signed) $("#practiceActive").classList.add("hidden");
   if (typeof refreshDaily === "function") refreshDaily();
+  if ($("#leaderboardMode").value === "daily") refreshLeaderboard();
 }
 
 const practiceCodeDrafts = new Map();
@@ -223,6 +224,7 @@ rulesDialog.addEventListener("click", (event) => {
 const leaderboardDialog = $("#leaderboardDialog");
 let leaderboardTournamentId = null;
 let leaderboardRequestId = 0;
+const modalDailyLeaderboard = new DailyLeaderboard({body: '#leaderboardBody', day: '#leaderboardDailyDay', prefix: 'modalStanding', active: () => $('#leaderboardMode').value === 'daily'});
 function openLeaderboard() {
   if (!leaderboardDialog.open) leaderboardDialog.showModal();
   refreshLeaderboard();
@@ -241,8 +243,8 @@ $("#leaderboardMode").addEventListener("change", () => {
   refreshLeaderboard();
 });
 $("#leaderboardDailyDay").addEventListener("change", () => {
-  $("#leaderboardBody").replaceChildren();
-  refreshLeaderboard();
+  const day = $("#leaderboardDailyDay").value;
+  $("#leaderboardPeriod").textContent = day ? `Daily ngày ${day.split("-").reverse().join("/")}: điểm và số trận trong ngày; Elo chung hiện tại.` : "Toàn bộ trận Daily hợp lệ; xếp theo Elo chung hiện tại.";
 });
 
 const replayDialog = $("#replayDialog");
@@ -566,6 +568,8 @@ async function refreshLeaderboard() {
   const daily = $("#leaderboardMode").value === "daily";
   $("#leaderboardTournamentFilter").classList.toggle("hidden", daily);
   $("#leaderboardDailyFilter").classList.toggle("hidden", !daily);
+  $("#leaderboardDailySelf").classList.toggle("hidden", !daily);
+  $("#leaderboardDailyPages").classList.toggle("hidden", !daily);
   $("#leaderboardColumns").innerHTML = (daily ? ["Hạng", "Đội", "Elo", "Điểm Daily", "Số trận"] : ["Hạng", "Đội", "Số trận", "Trận thắng", "Elo"]).map(text => `<th>${text}</th>`).join("");
   $("#leaderboardIntro").textContent = daily
     ? "Daily xếp theo Elo chung với Tournament. Điểm Daily để tham khảo; ngày theo giờ Việt Nam (UTC+7)."
@@ -574,11 +578,8 @@ async function refreshLeaderboard() {
     if (daily) {
       const day = $("#leaderboardDailyDay").value;
       $("#leaderboardPeriod").textContent = day ? `Daily ngày ${day.split("-").reverse().join("/")}: điểm và số trận trong ngày; Elo chung hiện tại.` : "Toàn bộ trận Daily hợp lệ; xếp theo Elo chung hiện tại.";
-      const rows = await request(`/api/daily/leaderboard${day ? `?day=${encodeURIComponent(day)}` : ""}`);
-      if (requestId !== leaderboardRequestId) return;
-      $("#leaderboardBody").innerHTML = rows.map((r, i) => `<tr><td><span class="rank-badge${i < 3 ? " top" : ""}">${i + 1}</span></td><td><strong>${escapeHtml(r.name)}</strong></td><td><strong>${Number(r.elo).toLocaleString("vi-VN", {maximumFractionDigits: 1})}</strong></td><td>${Number(r.points).toLocaleString("vi-VN")}</td><td>${r.matches}</td></tr>`).join("");
-      $("#leaderboardEmpty").textContent = day ? "Ngày này chưa có kết quả Daily." : "Chưa có kết quả Daily.";
-      $("#leaderboardEmpty").classList.toggle("hidden", rows.length > 0);
+      $("#leaderboardEmpty").classList.add("hidden");
+      await modalDailyLeaderboard.refresh();
       return;
     }
     const history=await request("/api/tournaments");

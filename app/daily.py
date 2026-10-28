@@ -7,15 +7,16 @@ import secrets
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Query
+from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, StrictBool
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case, union_all
 
 from . import tournament
 from .db import SessionLocal
 from .event_schedule import VN
 from .models import DailyControl, DailyDraw, DailyEntry, DailySearch, EloEvent, Job, Match, Player, Submission
-from .security import authorized_player
+from .security import authorized_player, bearer_scheme
 from .tournament_api import organizer
 
 router = APIRouter()
@@ -355,9 +356,56 @@ def retry(mid: int, pid: int = Depends(authorized_player)):
 
 
 @router.get("/api/daily/leaderboard")
-def get_leaderboard(day: str | None = None):
+def get_leaderboard(day: str | None = None, offset: int = Query(default=0, ge=0),
+                    limit: int = Query(default=10, ge=1, le=100), locate_me: bool = False,
+                    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)):
+    pid = authorized_player(credentials) if credentials else None
     with SessionLocal() as db:
-        return leaderboard(db, day)
+        return leaderboard_page(db, day, offset, limit, pid, locate_me)
+
+
+def leaderboard_page(db, day=None, offset=0, limit=10, player_id=None, locate_me=False):
+    """Aggregate and rank in PostgreSQL; return only the requested page and own row."""
+    tournament.check(offset >= 0 and 1 <= limit <= 100, "Phân trang không hợp lệ", 400)
+    if day:
+        try:
+            date.fromisoformat(day)
+        except ValueError:
+            tournament.check(False, "Ngày phải có dạng YYYY-MM-DD", 400)
+    conditions = [Match.kind == "daily", Match.status == "done"]
+    if day:
+        conditions.append(Match.event_day == day)
+    scores = union_all(
+        select(Match.player_a.label("pid"), Match.points_a.label("score")).where(*conditions),
+        select(Match.player_b.label("pid"), Match.points_b.label("score")).where(*conditions),
+    ).cte("daily_scores")
+    totals = select(scores.c.pid, func.sum(scores.c.score).label("points"),
+                    func.count().label("matches"),
+                    func.sum(case((scores.c.score == 1, 1), else_=0)).label("wins"))\
+        .group_by(scores.c.pid).cte("daily_totals")
+    events = union_all(
+        select(EloEvent.player_a.label("pid"), EloEvent.after_a.label("elo"), EloEvent.id.label("eid"))
+            .where(EloEvent.active.is_(True)),
+        select(EloEvent.player_b.label("pid"), EloEvent.after_b.label("elo"), EloEvent.id.label("eid"))
+            .where(EloEvent.active.is_(True)),
+    ).cte("rating_sides")
+    latest = select(events.c.pid, events.c.elo).distinct(events.c.pid)\
+        .order_by(events.c.pid, events.c.eid.desc()).cte("latest_rating")
+    elo = func.coalesce(latest.c.elo, 1000)
+    ranked = select(totals.c.pid.label("player_id"), Player.name, totals.c.points,
+        totals.c.matches, totals.c.wins, elo.label("elo"),
+        func.row_number().over(order_by=(elo.desc(), totals.c.points.desc(), totals.c.pid)).label("rank"))\
+        .join(Player, Player.id == totals.c.pid).outerjoin(latest, latest.c.pid == totals.c.pid).cte("daily_ranks")
+    total = db.scalar(select(func.count()).select_from(totals))
+    mine = db.execute(select(ranked).where(ranked.c.player_id == player_id)).mappings().first() if player_id else None
+    if locate_me and mine:
+        offset = ((mine["rank"] - 1) // limit) * limit
+    elif offset >= total:
+        offset = ((total - 1) // limit) * limit if total else 0
+    items = db.execute(select(ranked).order_by(ranked.c.rank).offset(offset).limit(limit)).mappings().all()
+    return {"items": [dict(row) for row in items], "total": total, "offset": offset, "limit": limit,
+            "has_previous": offset > 0, "has_next": offset + len(items) < total,
+            "me": dict(mine) if mine else None, "signed_in": player_id is not None}
 
 
 @router.post("/api/daily/submissions/{sid}/retry", status_code=202)
